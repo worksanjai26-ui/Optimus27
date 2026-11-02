@@ -7,7 +7,7 @@
     <!-- Typography: Archivo Expanded (display/headings/numbers), Inter (body/labels) -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..900&family=Inter:wght@400..700&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Inter:wght@400..700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <!-- Preload the entry insignia so the ENTER button shows immediately on refresh -->
     <link rel="preload" as="image" href="/assets/logo-hd.webp" type="image/webp" fetchpriority="high" />
     <!-- Tailwind Play CDN: generates utility classes at runtime (incl. dynamic theme classes) -->
@@ -39,6 +39,8 @@
         font-variant-numeric: tabular-nums;
         letter-spacing: -0.02em;
       }
+      /* Header navigation: technical monospace. */
+      .font-plex { font-family: 'IBM Plex Mono', ui-monospace, monospace !important; }
       /* The OPTIMUS '27 wordmark everywhere. */
       .opt-word { font-family: 'Archivo', ui-sans-serif, system-ui, sans-serif !important; font-stretch: 125%; }
     </style>

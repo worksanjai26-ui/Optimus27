@@ -3006,7 +3006,8 @@ const ThreeHeroBackground = ({
           lookTarget.set(0, -1.2 + 3.1 * k, 0);
         }
       } else if (!focus) {
-        camTarget.set(mouse.x * 1.4 + Math.sin(time * 0.08) * 0.8, 2.6 + mouse.y * 0.5, 18);
+        // Sideways drift is kept small so the gate ring stays centred behind the hero wordmark.
+        camTarget.set(mouse.x * 0.25 + Math.sin(time * 0.08) * 0.1, 2.6 + mouse.y * 0.5, 18);
         lookTarget.set(0, 1.7, -1);
       } else {
         // Fixed centre-stage framing for whichever hero is inspected.
@@ -3931,11 +3932,11 @@ export default function App() {
       )}
 
       {/* ===================== HEADER ===================== */}
-      <header className={`fixed top-0 left-0 right-0 z-50 bg-slate-950/90 border-b border-slate-800/80 ${entered ? 'fade-in' : ''}`}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between gap-3">
+      <header className={`fixed top-0 left-0 right-0 z-50 ${entered ? 'fade-in' : ''}`}>
+        <div className="relative px-6 sm:px-12 lg:px-16 h-20 flex items-center justify-between gap-3">
 
           <button onClick={goHome} className="flex items-center gap-3 text-left">
-            <div className={`relative p-1 rounded-xl border ${t.ring} ${t.glow} bg-slate-900/90 w-12 h-12 flex items-center justify-center`}>
+            <div className="relative w-10 h-10 flex items-center justify-center">
               <img
                 src="/assets/logo-hd.webp"
                 alt="OPTIMUS '27"
@@ -3960,31 +3961,41 @@ export default function App() {
               />
               <Zap className={`w-6 h-6 ${t.text}`} style={{ display: 'none' }} />
             </div>
-            <div>
-              <span className="text-xl sm:text-2xl font-black tracking-widest uppercase bg-clip-text text-transparent bg-gradient-to-r from-slate-100 via-slate-200 to-slate-400">
-                OPTIMUS <span className={t.text}>'27</span>
+            <div className="flex items-center gap-3">
+              {/* Tall condensed wordmark with a solid theme-colour tag, like a title card. */}
+              <span
+                className="font-black uppercase text-slate-100 leading-none text-2xl sm:text-[1.9rem]"
+                style={{ fontFamily: "'Archivo', sans-serif", fontStretch: '62%', letterSpacing: '0.14em' }}
+              >
+                OPTIMUS
+              </span>
+              <span
+                className={`font-black uppercase leading-none text-2xl sm:text-[1.9rem] ${t.text}`}
+                style={{ fontFamily: "'Archivo', sans-serif", fontStretch: '62%', letterSpacing: '0.14em' }}
+              >
+                '27
               </span>
             </div>
           </button>
 
-          <nav className="hidden lg:flex items-center gap-6 text-xs font-mono font-bold tracking-widest">
-            <button onClick={goHome} className={`transition-colors hover:text-white ${!activeHero ? t.text : 'text-slate-300'}`}>HOME</button>
+          <nav className="hidden lg:flex items-center gap-8 xl:gap-10 font-plex font-bold text-[13px] uppercase" style={{ letterSpacing: '0.2em' }}>
+            <button onClick={goHome} className={`transition-colors hover:text-white ${!activeHero ? t.text : 'text-white'}`}>HOME</button>
             {HEROES.map((h) => (
               <button
                 key={h.key}
                 onClick={() => goHero(h.key)}
-                className={`transition-colors hover:text-white ${activeHero === h.key ? THEME[h.theme].text : 'text-slate-300'}`}
+                className={`transition-colors hover:text-white ${activeHero === h.key ? THEME[h.theme].text : 'text-white'}`}
               >
                 {h.name}
               </button>
             ))}
-            <button onClick={goPasses} className="transition-colors hover:text-white text-slate-300">PASSES</button>
+            <button onClick={goPasses} className="transition-colors hover:text-white text-white">PASSES</button>
           </nav>
 
-          <div className="hidden sm:flex items-center gap-3">
+          <div className="hidden sm:flex items-center gap-4">
             <button
               onClick={toggleSound}
-              className="p-2.5 rounded-xl border border-slate-800 bg-slate-900/90 hover:bg-slate-800 transition-all"
+              className="p-2 text-slate-400 hover:text-white transition-colors"
               title={soundEnabled ? 'Mute music' : 'Play music'}
             >
               {soundEnabled ? <Volume2 className={`w-5 h-5 ${t.text}`} /> : <VolumeX className="w-5 h-5 text-slate-500" />}
@@ -3999,7 +4010,7 @@ export default function App() {
 
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="lg:hidden p-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-300"
+            className={`lg:hidden p-2 border ${t.ring} bg-slate-950/40 text-slate-200`}
           >
             {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
           </button>
@@ -4045,7 +4056,7 @@ export default function App() {
 
                 {/* Sized against the viewport height so the wordmark stays inside the 3D gate ring behind it
                     (the ring projects to ~54vh across at the fixed 48° FOV). */}
-                <h1 ref={heroTitleRef} className="opt-word font-black tracking-tight leading-none uppercase whitespace-nowrap" style={{ fontSize: 'clamp(1.6rem, min(6vh, 7vw), 5.25rem)' }}>
+                <h1 ref={heroTitleRef} className="opt-word font-black leading-none uppercase whitespace-nowrap" style={{ fontSize: 'clamp(1.7rem, min(6.25vh, 7.3vw), 5.5rem)', letterSpacing: '-0.035em' }}>
                   <span className="metal-text">OPTIMUS</span> <span className="gold-text">'27</span>
                 </h1>
                 <p className="font-extrabold tracking-widest text-slate-200 max-w-3xl mx-auto uppercase" style={{ fontSize: 'clamp(0.85rem, min(2vh, 3.8vw), 1.2rem)' }}>
@@ -4053,26 +4064,31 @@ export default function App() {
                 </p>
 
                 {/* Countdown */}
-                <div className="pt-2 max-w-2xl mx-auto pointer-events-auto">
-                  <div className={`p-5 sm:p-6 rounded-2xl bg-slate-900/90 border ${t.ring} ${t.glow} grid grid-cols-4 gap-2 sm:gap-4 text-center`}>
-                    {[
-                      { label: 'DAYS', val: timeLeft.days },
-                      { label: 'HOURS', val: timeLeft.hours },
-                      { label: 'MINUTES', val: timeLeft.minutes },
-                      { label: 'SECONDS', val: timeLeft.seconds }
-                    ].map((item, i) => {
-                      // Countdown colours: DAYS purple, HOURS red, MINUTES yellow, SECONDS cyan.
-                      const cq = QUAD[[2, 0, 1, 3][i]];
-                      return (
-                      <div key={item.label} className={`bg-slate-950/90 p-3 rounded-xl border ${cq.border}`}>
-                        <span className={`font-num font-bold leading-none text-2xl sm:text-4xl ${cq.text}`}>
+                {/* Plain, widely tracked white figures separated by colons, labels underneath. */}
+                <div className="pt-4 mx-auto pointer-events-auto flex items-start justify-center gap-3 sm:gap-6 text-white" style={{ textShadow: '0 2px 18px rgba(0,0,0,.65)' }}>
+                  {[
+                    { label: 'DAYS', val: timeLeft.days },
+                    { label: 'HOURS', val: timeLeft.hours },
+                    { label: 'MINUTES', val: timeLeft.minutes },
+                    { label: 'SECONDS', val: timeLeft.seconds }
+                  ].map((item, i) => (
+                    <React.Fragment key={item.label}>
+                      {i > 0 && (
+                        <span className="font-sans font-semibold leading-none text-slate-300/80" style={{ fontSize: 'clamp(1.75rem, 5.5vw, 3.25rem)' }}>:</span>
+                      )}
+                      <div className="flex flex-col items-center">
+                        <span
+                          className="font-sans font-semibold leading-none tabular-nums"
+                          style={{ fontSize: 'clamp(1.75rem, 5.5vw, 3.25rem)', letterSpacing: '0.28em', marginRight: '-0.28em' }}
+                        >
                           {String(item.val).padStart(2, '0')}
                         </span>
-                        <p className="text-[9px] sm:text-xs font-mono tracking-widest text-slate-400 mt-1">{item.label}</p>
+                        <span className="mt-3 font-sans font-bold text-[9px] sm:text-xs text-slate-200" style={{ letterSpacing: '0.3em', marginRight: '-0.3em' }}>
+                          {item.label}
+                        </span>
                       </div>
-                      );
-                    })}
-                  </div>
+                    </React.Fragment>
+                  ))}
                 </div>
 
                 <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-2 pointer-events-auto">
