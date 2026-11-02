@@ -196,34 +196,39 @@ type ThemeKey = 'amber' | 'rose' | 'purple' | 'cyan';
 export const THEME: Record<ThemeKey, {
   text: string; ring: string; glow: string; chip: string;
   btn: string; grad: string; dot: string; hoverText: string;
+  titleGrad: string;   // arena heading: white fading into the theme colour
 }> = {
   amber: {
     text: 'text-amber-400', hoverText: 'group-hover:text-amber-400',
     ring: 'border-amber-500/50', glow: 'shadow-[0_0_45px_rgba(250,204,21,0.28)]',
     chip: 'bg-amber-500/15 text-amber-300 border-amber-500/40',
     btn: 'bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 hover:from-amber-300 hover:to-yellow-400 text-black',
-    grad: 'from-amber-300 via-yellow-400 to-amber-500', dot: 'bg-amber-400'
+    grad: 'from-amber-300 via-yellow-400 to-amber-500', dot: 'bg-amber-400',
+    titleGrad: 'from-slate-200 via-amber-400 to-yellow-500'
   },
   rose: {
     text: 'text-rose-400', hoverText: 'group-hover:text-rose-400',
     ring: 'border-rose-500/50', glow: 'shadow-[0_0_45px_rgba(244,63,94,0.28)]',
     chip: 'bg-rose-500/15 text-rose-300 border-rose-500/40',
     btn: 'bg-gradient-to-r from-rose-600 via-red-500 to-rose-500 hover:from-rose-500 hover:to-red-400 text-white',
-    grad: 'from-slate-200 via-rose-400 to-red-500', dot: 'bg-rose-500'
+    grad: 'from-slate-200 via-rose-400 to-red-500', dot: 'bg-rose-500',
+    titleGrad: 'from-slate-200 via-rose-400 to-red-500'
   },
   purple: {
     text: 'text-fuchsia-400', hoverText: 'group-hover:text-fuchsia-400',
     ring: 'border-fuchsia-500/50', glow: 'shadow-[0_0_45px_rgba(217,70,239,0.28)]',
     chip: 'bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-500/40',
     btn: 'bg-gradient-to-r from-fuchsia-600 via-purple-600 to-violet-600 hover:from-fuchsia-500 hover:to-purple-500 text-white',
-    grad: 'from-fuchsia-400 via-purple-500 to-violet-600', dot: 'bg-fuchsia-500'
+    grad: 'from-fuchsia-400 via-purple-500 to-violet-600', dot: 'bg-fuchsia-500',
+    titleGrad: 'from-slate-200 via-fuchsia-400 to-purple-500'
   },
   cyan: {
     text: 'text-cyan-400', hoverText: 'group-hover:text-cyan-400',
     ring: 'border-cyan-500/50', glow: 'shadow-[0_0_45px_rgba(34,211,238,0.28)]',
     chip: 'bg-cyan-500/15 text-cyan-300 border-cyan-500/40',
     btn: 'bg-gradient-to-r from-cyan-400 via-sky-400 to-cyan-500 hover:from-cyan-300 hover:to-sky-300 text-black',
-    grad: 'from-cyan-300 via-sky-400 to-cyan-500', dot: 'bg-cyan-400'
+    grad: 'from-cyan-300 via-sky-400 to-cyan-500', dot: 'bg-cyan-400',
+    titleGrad: 'from-slate-200 via-cyan-400 to-sky-500'
   }
 };
 
@@ -495,7 +500,7 @@ const applyOverrides = (overrides: Overrides) => {
 };
 
 /* ============================ FEST PASSES ========================= */
-export type PassId = 'hackathon' | 'oneday' | 'twoday' | 'exclusive' | 'combo';
+export type PassId = 'hackathon' | 'oneday' | 'twoday' | 'exclusive';
 type FestPass = {
   id: PassId; name: string; price: number; theme: ThemeKey; badge?: string;
   blurb: string; perks: string[]; valid: string;
@@ -510,12 +515,6 @@ export const PASSES: FestPass[] = [
     blurb: 'Entry to the 24-hour Bumblebee Hackathon for your whole team.',
     perks: ['24-hour flagship hackathon', 'Teams of 2 – 4 members', '₹500 for each team member'],
     valid: 'FEB 4 – 5 · 24 HOURS', team: { min: 2, max: 4 }, hackathon: true
-  },
-  {
-    id: 'combo', name: 'COMBO PASS', price: 950, theme: 'amber', badge: 'BEST VALUE',
-    blurb: 'Hackathon Pass + Exclusive Pass combined, for one person.',
-    perks: ['24-hour flagship hackathon', 'Every other event on both days', 'Save ₹50 over buying both passes'],
-    valid: 'FEB 4 & FEB 5', hackathon: true
   },
   {
     id: 'oneday', name: 'ONE-DAY PASS', price: 300, theme: 'cyan',
@@ -883,7 +882,9 @@ const probeQualityTier = (width: number): QualityTier => {
   if (mobile || cores <= 4 || mem <= 4) return 'low';
   // Every Intel integrated GPU (HD, UHD, Iris, Xe) goes to lite: measured ~24 fps with bloom vs a steady cap without.
   if (/SwiftShader|llvmpipe|Software|Basic Render|Mali|Adreno|PowerVR|Intel(?!.*Arc)/i.test(gpu)) return 'low';
-  if (width < 1024 || /Radeon(\(TM\))? Graphics|Vega/i.test(gpu)) return 'mid';
+  // Privacy browsers (Brave, Firefox resist-fingerprinting) hide or fake the GPU name; without a
+  // name we can trust, don't assume a discrete GPU. The render loop still drops effects if it lags.
+  if (!gpu || width < 1024 || /Radeon(\(TM\))? Graphics|Vega|Generic|ANGLE \(Google/i.test(gpu)) return 'mid';
   return 'high';
 };
 
@@ -2771,7 +2772,27 @@ const ThreeHeroBackground = ({
     let raf = 0;
     let warmFrames = 0;        // frames rendered so far (shaders compile during these)
     let skipOdd = false;
-    let perfAcc = 0, perfFrames = 0, headroomWindows = 0;
+    let perfAcc = 0, perfFrames = 0, headroomWindows = 0, slowWindows = 0;
+    // Bloom, the mirror floor and shadow maps are the costly extras. If frames still run long,
+    // they are switched off for the rest of the visit before the render scale is touched.
+    let effectsOn = !!composer || !!reflector || renderer.shadowMap.enabled;
+    const dropEffects = () => {
+      effectsOn = false;
+      if (reflector) reflector.visible = false;
+      const fm = floor.material as THREE.MeshStandardMaterial;
+      fm.transparent = false;
+      fm.opacity = 1;
+      key.castShadow = false;
+      renderer.shadowMap.enabled = false;
+      scene.traverse((o) => {
+        const m = (o as THREE.Mesh).material;
+        if (m) (Array.isArray(m) ? m : [m]).forEach((mm) => { mm.needsUpdate = true; });
+      });
+      // Let the stylesheet drop its heavier decoration too.
+      const cl = document.documentElement.classList;
+      cl.remove('tier-high', 'tier-mid');
+      cl.add('tier-low');
+    };
     const applyDpr = () => {
       renderer.setPixelRatio(dpr);
       composer?.setPixelRatio(dpr);
@@ -2795,13 +2816,22 @@ const ThreeHeroBackground = ({
       warmFrames++;
       // Adaptive resolution: step the render scale down quickly when frames run long,
       // and back up only after sustained headroom (each change reallocates targets).
-      if (!throttled && !pausedRef.current && rawDt < 0.25) {
-        perfAcc += rawDt;
+      // While scrolled down only every other frame is drawn, so halve the gap to compare like for like.
+      const frameDt = throttled ? rawDt / 2 : rawDt;
+      if (!pausedRef.current && warmFrames > 30 && frameDt < 0.25) {
+        perfAcc += frameDt;
         perfFrames++;
         if (perfAcc > 1.2) {
           const avg = perfAcc / perfFrames;
           perfAcc = perfFrames = 0;
-          if (avg > 1 / 45 && dpr > DPR_MIN) {
+          slowWindows = avg > 1 / 45 ? slowWindows + 1 : 0;
+          // Two slow windows in a row, so a one-off shader-compile stall doesn't trigger it.
+          if (slowWindows >= 2 && effectsOn) {
+            headroomWindows = 0;
+            dropEffects();
+          } else if (slowWindows && effectsOn) {
+            // wait for the next window before deciding
+          } else if (avg > 1 / 45 && dpr > DPR_MIN) {
             dpr = Math.max(DPR_MIN, +(dpr - 0.15).toFixed(2));
             headroomWindows = 0;
             applyDpr();
@@ -3133,7 +3163,7 @@ const ThreeHeroBackground = ({
         eGeo.attributes.position.needsUpdate = true;
       }
 
-      if (composer) {
+      if (composer && effectsOn) {
         renderer.shadowMap.needsUpdate = true;
         composer.render();
       } else {
@@ -3780,7 +3810,7 @@ export default function App() {
     addRegistration({
       pass: pass.id,
       day: pass.pickDay ? formData.day : null,
-      team_name: pass.team || pass.id === 'combo' ? formData.teamName.trim() : null,
+      team_name: pass.team ? formData.teamName.trim() : null,
       leader_name: formData.leaderName.trim(),
       members: pass.team ? formData.members.slice(0, formData.teamSize - 1).map((m) => m.trim()) : [],
       email: formData.email.trim(),
@@ -4115,9 +4145,8 @@ export default function App() {
                   ROLL OUT. TRANSFORM YOUR <span className={`${t.text} underline decoration-2`}>DESTINY</span>
                 </p>
 
-                {/* Countdown */}
-                <Countdown />
-
+                {/* Buttons + countdown sit a little lower without moving the title above them. */}
+                <div className="relative top-4 sm:top-8">
                 <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-2 pointer-events-auto">
                   <button
                     onClick={() => openRegister()}
@@ -4131,6 +4160,10 @@ export default function App() {
                   >
                     MEET THE LEADERS
                   </a>
+                </div>
+
+                {/* Countdown, below the call-to-action buttons */}
+                <Countdown />
                 </div>
 
               </div>
@@ -4242,8 +4275,9 @@ export default function App() {
                 </p>
               </div>
 
-              {[PASSES.filter((p) => p.hackathon), PASSES.filter((p) => !p.hackathon)].map((row, ri) => (
-                <div key={ri} className={`grid grid-cols-1 gap-6 ${ri === 0 ? 'md:grid-cols-2 mb-6' : 'md:grid-cols-3'}`}>
+              {/* 2 × 2: Hackathon + Exclusive on top, One-Day + Two-Day below. */}
+              {[['hackathon', 'exclusive'], ['oneday', 'twoday']].map((ids) => ids.map((id) => passById(id as PassId))).map((row, ri) => (
+                <div key={ri} className={`grid grid-cols-1 md:grid-cols-2 gap-6 ${ri === 0 ? 'mb-6' : ''}`}>
                   {row.map((p) => {
                     const ptk = THEME[p.theme];
                     return (
@@ -4319,7 +4353,7 @@ export default function App() {
                 <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-md text-xs font-mono border ${t.chip}`}>
                   <span className={`h-2 w-2 rounded-full ${t.dot} animate-pulse`} /> {active.faction} · {active.role}
                 </div>
-                <h1 className={`text-5xl sm:text-7xl font-black tracking-tight uppercase bg-clip-text text-transparent bg-gradient-to-r ${t.grad}`}>
+                <h1 className={`text-5xl sm:text-7xl font-black tracking-tight uppercase bg-clip-text text-transparent bg-gradient-to-r ${t.titleGrad}`}>
                   {active.name}
                 </h1>
                 <p className={`text-lg sm:text-2xl font-extrabold tracking-wide uppercase ${t.text}`}>{active.tagline}</p>
@@ -4539,9 +4573,9 @@ export default function App() {
                     </div>
                   )}
 
-                  {(pass.team || pass.id === 'combo') && (
+                  {pass.team && (
                     <div>
-                      <label className="text-xs font-mono text-slate-400 block mb-1">{pass.team ? 'TEAM NAME' : 'HACKATHON TEAM NAME'}</label>
+                      <label className="text-xs font-mono text-slate-400 block mb-1">TEAM NAME</label>
                       <input
                         type="text" required placeholder="e.g., Cyber Knights"
                         value={formData.teamName}
@@ -4659,7 +4693,7 @@ export default function App() {
                     <span className={`text-[10px] font-mono px-2 py-0.5 rounded border ${pt.chip}`}>{pass.name}</span>
                   </div>
                   <div className="space-y-2 font-mono text-xs">
-                    {(pass.team || pass.id === 'combo') && (
+                    {pass.team && (
                       <div className="flex justify-between gap-3"><span className="text-slate-500">TEAM:</span><span className="text-white font-bold text-right">{formData.teamName}</span></div>
                     )}
                     <div className="flex justify-between gap-3"><span className="text-slate-500">{pass.team ? 'LEADER:' : 'NAME:'}</span><span className="text-slate-300 text-right">{formData.leaderName}</span></div>
