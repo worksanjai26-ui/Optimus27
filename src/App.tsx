@@ -1301,7 +1301,7 @@ const ThreeHeroBackground = ({
         g.stroke();
       });
     };
-    const fontFace = '"Oxanium", "Rajdhani", sans-serif';
+    const fontFace = '"Inter", ui-sans-serif, sans-serif';
     const infoCv = liveCanvas(1024, 648);
     const drawInfo = () => {
       panelBase(infoCv);
@@ -1368,7 +1368,7 @@ const ThreeHeroBackground = ({
     drawInfo();
     drawSponsor();
     logoImgs.forEach((im) => { im.onload = drawSponsor; });
-    document.fonts?.load(`700 70px Oxanium`).then(() => { drawInfo(); drawSponsor(); }).catch(() => {});
+    document.fonts?.load(`700 70px Inter`).then(() => { drawInfo(); drawSponsor(); }).catch(() => {});
 
     const standGlow = new THREE.MeshBasicMaterial({ color: new THREE.Color(0x67e8f9).multiplyScalar(2.2) });
     const standMetal = new THREE.MeshStandardMaterial({ color: 0x9aa4b2, metalness: 0.95, roughness: 0.3 });
@@ -3360,7 +3360,7 @@ const MOTION_CSS = `
 .prize-rise { opacity: 0; }
 .prize-in .prize-rise { animation: prizeRise .7s cubic-bezier(.2,.8,.2,1) both; }
 @keyframes prizeRise { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: none; } }
-.prize-amount { font-family: 'Chakra Petch', ui-sans-serif, system-ui, sans-serif; filter: drop-shadow(0 3px 0 rgba(0,0,0,.5)) drop-shadow(0 0 28px rgba(250,204,21,.4)); }
+.prize-amount { font-family: 'Archivo', ui-sans-serif, system-ui, sans-serif; font-stretch: 125%; font-variant-numeric: tabular-nums; filter: drop-shadow(0 3px 0 rgba(0,0,0,.5)) drop-shadow(0 0 28px rgba(250,204,21,.4)); }
 .prize-plus { opacity: 0; margin-left: .04em; }
 .prize-plus-on { animation: prizePlus .5s cubic-bezier(.2,1.3,.4,1) both; }
 @keyframes prizePlus { from { opacity: 0; transform: scale(.4); } to { opacity: 1; transform: none; } }
@@ -3835,7 +3835,7 @@ export default function App() {
 
           {/* OPTIMUS '27 that zooms in and settles into the home hero's place on ENTER */}
           <div className="gate-title-burst absolute inset-0 flex items-center justify-center pointer-events-none px-4" aria-hidden="true">
-            <div ref={burstRef} className="opt-word font-black uppercase leading-none tracking-tight text-center" style={{ fontSize: 'clamp(3.2rem, min(15vw, 17vh), 12rem)', opacity: 0 }}>
+            <div ref={burstRef} className="opt-word font-black uppercase leading-none tracking-tight text-center whitespace-nowrap" style={{ fontSize: 'clamp(2.2rem, min(11vw, 15vh), 10.5rem)', opacity: 0 }}>
               <span className="metal-text">OPTIMUS</span> <span className="gold-text">'27</span>
             </div>
           </div>
@@ -3849,8 +3849,8 @@ export default function App() {
             </div>
 
             <h1
-              className="gate-rise gate-fade font-black uppercase leading-[0.9] tracking-tight"
-              style={{ fontSize: 'clamp(2.8rem, min(12vw, 13vh), 9rem)', animationDelay: '.15s' }}
+              className="gate-rise gate-fade font-black uppercase leading-[0.9] tracking-tight whitespace-nowrap"
+              style={{ fontSize: 'clamp(2rem, min(9vw, 12vh), 8rem)', animationDelay: '.15s' }}
             >
               <span className="metal-text">OPTIMUS</span> <span className="gold-text">'27</span>
             </h1>
@@ -4045,7 +4045,7 @@ export default function App() {
 
                 {/* Sized against the viewport height so the wordmark stays inside the 3D gate ring behind it
                     (the ring projects to ~54vh across at the fixed 48° FOV). */}
-                <h1 ref={heroTitleRef} className="opt-word font-black tracking-tight leading-none uppercase" style={{ fontSize: 'clamp(2.5rem, min(8vh, 11vw), 7.5rem)' }}>
+                <h1 ref={heroTitleRef} className="opt-word font-black tracking-tight leading-none uppercase whitespace-nowrap" style={{ fontSize: 'clamp(1.9rem, min(7.5vh, 8.5vw), 6.5rem)' }}>
                   <span className="metal-text">OPTIMUS</span> <span className="gold-text">'27</span>
                 </h1>
                 <p className="font-extrabold tracking-widest text-slate-200 max-w-3xl mx-auto uppercase" style={{ fontSize: 'clamp(1rem, min(2.5vh, 4.6vw), 1.5rem)' }}>
@@ -4171,7 +4171,7 @@ export default function App() {
                           <span className={`h-2 w-2 rounded-full ${ht.dot}`} />
                           <span className="text-[10px] font-mono tracking-widest text-slate-400">{h.faction} · {h.role}</span>
                         </div>
-                        <h3 className={`text-2xl font-black tracking-wide uppercase ${ht.hoverText} transition-colors`}>
+                        <h3 className={`text-xl xl:text-2xl font-black tracking-tight uppercase ${ht.hoverText} transition-colors`}>
                           {h.name}
                         </h3>
                         <p className="text-slate-400 text-sm">{h.tagline}</p>
@@ -4256,7 +4256,7 @@ export default function App() {
                 ].map((s, i) => (
                   <div key={i} className={`stat-tile p-5 rounded-2xl bg-slate-900/90 border ${QUAD[i].border} text-center space-y-2`}>
                     <div className={`stat-ico inline-flex p-3 rounded-xl bg-slate-950 border border-slate-800 ${QUAD[i].text}`}>{s.icon}</div>
-                    <h4 className={`font-num font-bold leading-none text-3xl ${QUAD[i].text}`}>{s.val}</h4>
+                    <h4 className={`font-num font-bold leading-none text-2xl sm:text-3xl ${QUAD[i].text}`}>{s.val}</h4>
                     <p className="text-[11px] font-mono tracking-wider text-slate-400 uppercase">{s.label}</p>
                   </div>
                 ))}
