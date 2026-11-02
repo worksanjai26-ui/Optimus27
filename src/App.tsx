@@ -3288,6 +3288,8 @@ const MOTION_CSS = `
 .gate-rise { animation: gateRise .8s cubic-bezier(.2,.8,.2,1) both; }
 @keyframes emblemIn { from { opacity: 0; transform: scale(.9); filter: brightness(1.5) blur(4px); } to { opacity: 1; transform: none; filter: none; } }
 .emblem-in { animation: emblemIn .6s cubic-bezier(.2,.8,.2,1) both; }
+/* Hold every reveal at its first frame until the insignia is decoded, so logo and title start together. */
+.gate-hold .gate-rise, .gate-hold .emblem-in { animation-play-state: paused; }
 
 /* ENTER sequence (~2.3s, transform + opacity only so it stays on the compositor):
    text fades; the insignia flies to centre and grows broad; it dissolves into a large
@@ -3552,14 +3554,26 @@ export default function App() {
   useEffect(() => {
     // The entry insignia's onLoad mounts the 3D scene once the logo has painted, so the
     // heavy scene build never delays the ENTER button. This is only a fallback.
-    const id = window.setTimeout(() => setMount3D(true), 1400);
+    const id = window.setTimeout(() => setMount3D(true), 2400);
+    return () => clearTimeout(id);
+  }, []);
+  // The entry insignia is fully decoded before the entry screen reveals, so the logo and the
+  // OPTIMUS '27 title rise in together instead of the logo popping in late.
+  const [logoReady, setLogoReady] = useState(false);
+  useEffect(() => {
+    const im = new Image();
+    im.src = BASE + 'assets/logo-hd.webp';
+    const ready = () => setLogoReady(true);
+    im.decode().then(ready, ready);
+    const id = window.setTimeout(ready, 1500);   // never hold the page on a slow network
     return () => clearTimeout(id);
   }, []);
   useEffect(() => {
-    // Drop the instant HTML splash as soon as React has rendered the real entry screen.
+    // Drop the instant HTML splash (logo + title) once the real entry screen is ready to take over.
+    if (!logoReady) return;
     const s = document.getElementById('splash');
     if (s) { s.style.opacity = '0'; setTimeout(() => s.remove(), 450); }
-  }, []);
+  }, [logoReady]);
   // Becomes true as the entry screen starts to open: resumes the 3D scene and eases the site in.
   const [entered, setEntered] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<EventItem | null>(null);
@@ -3844,7 +3858,7 @@ export default function App() {
           </div>
 
           <div
-            className="gate-content relative h-full flex flex-col items-center justify-center text-center px-5"
+            className={`gate-content relative h-full flex flex-col items-center justify-center text-center px-5 ${logoReady ? '' : 'gate-hold'}`}
             style={{ gap: 'clamp(12px, 2.8vh, 28px)' }}
           >
             <div className="gate-rise gate-fade inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-amber-400/50 bg-amber-400/10 text-[10px] sm:text-xs font-mono font-bold tracking-[0.3em] text-amber-200 shadow-[0_0_18px_rgba(250,204,21,0.12)]">
@@ -3853,7 +3867,7 @@ export default function App() {
 
             <h1
               className="gate-rise gate-fade font-black uppercase leading-[0.9] tracking-tight"
-              style={{ fontSize: 'clamp(2.8rem, min(12vw, 13vh), 9rem)', animationDelay: '.15s' }}
+              style={{ fontSize: 'clamp(2.8rem, min(12vw, 13vh), 9rem)', animationDelay: '.1s' }}
             >
               <span className="metal-text">OPTIMUS</span> <span className="gold-text">'27</span>
             </h1>
@@ -3868,7 +3882,7 @@ export default function App() {
 
             {/* ENTER: the Autobot insignia. On click it flies to the screen centre, zooms
                 up huge and vanishes into the site (offsets measured at click time). */}
-            <div className="emblem-in mt-[clamp(8px,2vh,20px)]" style={{ animationDelay: '0s' }}>
+            <div className="emblem-in mt-[clamp(8px,2vh,20px)]" style={{ animationDelay: '.1s' }}>
               <button
                 type="button"
                 onClick={(e) => {
@@ -3889,9 +3903,9 @@ export default function App() {
                   alt=""
                   width={240}
                   height={240}
-                  decoding="async"
+                  decoding="sync"
                   fetchPriority="high"
-                  onLoad={() => setMount3D(true)}
+                  onLoad={() => window.setTimeout(() => setMount3D(true), 900)}
                   draggable={false}
                   className="gate-logo relative w-full h-full object-contain"
                 />
