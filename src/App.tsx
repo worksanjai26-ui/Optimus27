@@ -3176,11 +3176,14 @@ const ThreeHeroBackground = ({
 // Fest palette combination: red, yellow, purple, Ratchet-cyan — spread across repeated UI
 // groups (countdown, stat tiles, entry motes) so the site reads multi-colour, not all-yellow.
 const QUAD = [
-  { text: 'text-rose-400',    border: 'border-rose-500/50',    dot: '#fb7185' },   // red
-  { text: 'text-amber-400',   border: 'border-amber-500/50',   dot: '#fbbf24' },   // yellow
-  { text: 'text-fuchsia-400', border: 'border-fuchsia-500/50', dot: '#e879f9' },   // purple
-  { text: 'text-cyan-400',    border: 'border-cyan-500/50',    dot: '#22d3ee' }    // cyan
+  { text: 'text-rose-400',    border: 'border-rose-500/50',    glow: 'shadow-[0_0_26px_rgba(244,63,94,0.22)]',  dot: '#fb7185' },   // red
+  { text: 'text-amber-400',   border: 'border-amber-500/50',   glow: 'shadow-[0_0_26px_rgba(250,204,21,0.22)]', dot: '#fbbf24' },   // yellow
+  { text: 'text-fuchsia-400', border: 'border-fuchsia-500/50', glow: 'shadow-[0_0_26px_rgba(217,70,239,0.22)]', dot: '#e879f9' },   // purple
+  { text: 'text-cyan-400',    border: 'border-cyan-500/50',    glow: 'shadow-[0_0_26px_rgba(34,211,238,0.22)]', dot: '#22d3ee' }    // cyan
 ];
+
+// Cards sit on a neutral border; their theme border and glow only light up on hover.
+const onHover = (cls: string) => cls.split(' ').map((c) => `hover:${c}`).join(' ');
 
 const GATE_MOTES = Array.from({ length: 26 }, (_, i) => {
   const r = (n: number) => { const x = Math.sin(i * 12.9898 + n * 78.233) * 43758.5453; return x - Math.floor(x); };
@@ -3346,7 +3349,7 @@ const MOTION_CSS = `
 @keyframes prizeSweep { 0% { transform: translateX(-80px); opacity: 0; } 30% { opacity: .85; } 100% { transform: translateX(220px); opacity: 0; } }
 /* pass cards + stat tiles: lift, glow and a sheen on hover */
 .lift-card { transition: transform .25s cubic-bezier(.2,.8,.2,1), box-shadow .25s ease, border-color .25s ease; will-change: transform; }
-.lift-card:hover { transform: translateY(-8px); box-shadow: 0 22px 44px rgba(0,0,0,.5), 0 0 34px rgba(250,204,21,.16); }
+.lift-card:hover { transform: translateY(-8px); }
 .lift-card::after {
   content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0;
   background: linear-gradient(115deg, transparent 40%, rgba(255,255,255,.12) 50%, transparent 60%);
@@ -3355,7 +3358,7 @@ const MOTION_CSS = `
 .lift-card:hover::after { opacity: 1; animation: cardSheen 1s ease-out; }
 @keyframes cardSheen { from { background-position: 150% 0; } to { background-position: -40% 0; } }
 .stat-tile { transition: transform .22s cubic-bezier(.2,.8,.2,1), box-shadow .22s ease, border-color .22s ease; }
-.stat-tile:hover { transform: translateY(-6px); border-color: rgba(250,204,21,.5); box-shadow: 0 16px 30px rgba(0,0,0,.45), 0 0 26px rgba(250,204,21,.18); }
+.stat-tile:hover { transform: translateY(-6px); }
 .stat-tile .stat-ico { transition: transform .22s cubic-bezier(.2,1.5,.4,1); }
 .stat-tile:hover .stat-ico { transform: scale(1.14) rotate(-6deg); }
 .prize-rise { opacity: 0; }
@@ -4129,7 +4132,7 @@ export default function App() {
               {/* BUMBLEBEE — main event, full width */}
               <button
                 onClick={() => goHero(bumblebee.key)}
-                className={`group w-full text-left mb-6 relative overflow-hidden rounded-3xl bg-slate-900/90 border ${bt.ring} ${bt.glow} p-6 sm:p-10 transition-all hover:-translate-y-1`}
+                className={`group w-full text-left mb-6 relative overflow-hidden rounded-3xl bg-slate-900/90 border border-slate-800 ${onHover(bt.ring)} ${onHover(bt.glow)} p-6 sm:p-10 transition-all hover:-translate-y-1`}
               >
                 <div className={`absolute -top-10 -right-10 w-56 h-56 rounded-full bg-gradient-to-br ${bt.grad} opacity-20 blur-3xl`} />
                 <div className="relative flex flex-col md:flex-row md:items-center gap-6 md:gap-10">
@@ -4176,7 +4179,7 @@ export default function App() {
                     <button
                       key={h.key}
                       onClick={() => goHero(h.key)}
-                      className={`group text-left relative overflow-hidden rounded-3xl bg-slate-900/90 border ${ht.ring} ${ht.glow} p-6 transition-all hover:-translate-y-2 flex flex-col justify-between min-h-[300px]`}
+                      className={`group text-left relative overflow-hidden rounded-3xl bg-slate-900/90 border border-slate-800 ${onHover(ht.ring)} ${onHover(ht.glow)} p-6 transition-all hover:-translate-y-2 flex flex-col justify-between min-h-[300px]`}
                     >
                       <div className={`absolute -top-12 -right-12 w-40 h-40 rounded-full bg-gradient-to-br ${ht.grad} opacity-10 blur-2xl group-hover:opacity-25 transition-opacity`} />
                       <div className="relative space-y-4">
@@ -4222,7 +4225,7 @@ export default function App() {
                     return (
                       <div
                         key={p.id}
-                        className={`lift-card relative overflow-hidden rounded-3xl bg-slate-900/90 border ${ptk.ring} ${ptk.glow} p-6 sm:p-8 flex flex-col`}
+                        className={`lift-card relative overflow-hidden rounded-3xl bg-slate-900/90 border border-slate-800 ${onHover(ptk.ring)} ${onHover(ptk.glow)} p-6 sm:p-8 flex flex-col`}
                       >
                         <div className={`absolute -top-12 -right-12 w-44 h-44 rounded-full bg-gradient-to-br ${ptk.grad} opacity-15 blur-3xl`} />
                         <div className="relative flex items-center justify-between gap-3">
@@ -4267,7 +4270,7 @@ export default function App() {
                   { icon: <Users className="w-6 h-6" />, val: 'National', label: 'Level Fest' },
                   { icon: <Calendar className="w-6 h-6" />, val: '2 Days', label: 'Feb 4–5, 2027' }
                 ].map((s, i) => (
-                  <div key={i} className={`stat-tile p-5 rounded-2xl bg-slate-900/90 border ${QUAD[i].border} text-center space-y-2`}>
+                  <div key={i} className={`stat-tile p-5 rounded-2xl bg-slate-900/90 border border-slate-800 ${onHover(QUAD[i].border)} ${onHover(QUAD[i].glow)} text-center space-y-2`}>
                     <div className={`stat-ico inline-flex p-3 rounded-xl bg-slate-950 border border-slate-800 ${QUAD[i].text}`}>{s.icon}</div>
                     <h4 className={`font-sans font-semibold tracking-tight leading-none text-2xl sm:text-3xl ${QUAD[i].text}`}>{s.val}</h4>
                     <p className="text-[11px] font-mono tracking-wider text-slate-400 uppercase">{s.label}</p>
