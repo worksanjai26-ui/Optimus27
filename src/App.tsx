@@ -33,7 +33,9 @@ import {
   Megaphone,
   Home,
   MapPin,
-  CalendarPlus
+  CalendarPlus,
+  Award,
+  Download
 } from 'lucide-react';
 import { listOverrides, listAnnouncements, addRegistration, recordVisit, Announcement, Overrides } from './adminData';
 // Public-folder files are served under the Vite base (the repo sub-path on GitHub Pages, '/' in dev).
@@ -3514,6 +3516,264 @@ function Countdown() {
   );
 }
 
+/* ===================== CERTIFICATE PAGE ===================== */
+// Optimus IDs: letters, digits and hyphens (e.g. OPT27-0142). There is no server list of issued IDs yet,
+// so only the format is checked; swap isValidOptimusId for a real lookup once IDs are issued.
+const OPTIMUS_ID_RE = /^[A-Z0-9][A-Z0-9-]{3,19}$/;
+const isValidOptimusId = (id: string) => OPTIMUS_ID_RE.test(id);
+
+const loadImage = (src: string) => new Promise<HTMLImageElement | null>((res) => {
+  const im = new Image();
+  im.onload = () => res(im);
+  im.onerror = () => res(null);
+  im.src = src;
+});
+
+// Draws the certificate onto a 2000×1414 canvas (A4 landscape ratio).
+async function drawCertificate(name: string, id: string) {
+  const W = 2000, H = 1414;
+  const cv = document.createElement('canvas');
+  cv.width = W;
+  cv.height = H;
+  const g = cv.getContext('2d')!;
+  await Promise.all([
+    "900 120px 'Archivo'", "400 40px 'Inter'", "700 40px 'Inter'", "600 30px 'IBM Plex Mono'"
+  ].map((f) => document.fonts?.load(f).catch(() => undefined)));
+  const [logo, kpr, acmw, nexora] = await Promise.all(
+    ['assets/logo-hd.webp', 'assets/kpr-hd.png', 'assets/acmw.png', 'assets/nexora.png'].map((f) => loadImage(BASE + f))
+  );
+  const ext = g as CanvasRenderingContext2D & { fontStretch?: string; letterSpacing?: string };
+  const stretch = (v: string) => { ext.fontStretch = v; };
+  const spaced = (px: number) => { ext.letterSpacing = `${px}px`; };
+
+  // Background: deep navy with a warm glow behind the name.
+  const bg = g.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#0a1226');
+  bg.addColorStop(1, '#03060f');
+  g.fillStyle = bg;
+  g.fillRect(0, 0, W, H);
+  const glow = g.createRadialGradient(W / 2, H * 0.55, 40, W / 2, H * 0.55, 900);
+  glow.addColorStop(0, 'rgba(250,204,21,0.16)');
+  glow.addColorStop(1, 'rgba(250,204,21,0)');
+  g.fillStyle = glow;
+  g.fillRect(0, 0, W, H);
+
+  // Double gold frame with corner brackets.
+  g.strokeStyle = '#facc15';
+  g.lineWidth = 6;
+  g.strokeRect(50, 50, W - 100, H - 100);
+  g.strokeStyle = 'rgba(250,204,21,0.45)';
+  g.lineWidth = 2;
+  g.strokeRect(74, 74, W - 148, H - 148);
+  g.strokeStyle = '#facc15';
+  g.lineWidth = 6;
+  ([[50, 50, 1, 1], [W - 50, 50, -1, 1], [50, H - 50, 1, -1], [W - 50, H - 50, -1, -1]] as const).forEach(([x, y, sx, sy]) => {
+    g.beginPath();
+    g.moveTo(x + sx * 110, y + sy * 26);
+    g.lineTo(x + sx * 26, y + sy * 26);
+    g.lineTo(x + sx * 26, y + sy * 110);
+    g.stroke();
+  });
+
+  // Header logos: fest insignia left, KPR right.
+  if (logo) g.drawImage(logo, 150, 120, 170, 170);
+  if (kpr) {
+    const h = 130, w = (kpr.naturalWidth / kpr.naturalHeight) * h;
+    g.drawImage(kpr, W - 150 - w, 140, w, h);
+  }
+
+  // Wordmark: white OPTIMUS, gold '27.
+  g.textBaseline = 'alphabetic';
+  g.textAlign = 'left';
+  stretch('expanded');
+  spaced(4);
+  g.font = "900 96px 'Archivo', sans-serif";
+  const word = 'OPTIMUS ', year = "'27";
+  const ww = g.measureText(word).width, yw = g.measureText(year).width;
+  const x0 = W / 2 - (ww + yw) / 2;
+  g.fillStyle = '#e2e8f0';
+  g.fillText(word, x0, 260);
+  g.fillStyle = '#facc15';
+  g.fillText(year, x0 + ww, 260);
+  g.textAlign = 'center';
+  stretch('normal');
+  spaced(14);
+  g.font = "600 26px 'IBM Plex Mono', monospace";
+  g.fillStyle = '#94a3b8';
+  g.fillText('NATIONAL LEVEL TECHNO FEST', W / 2, 320);
+
+  // Title
+  spaced(18);
+  g.font = "700 46px 'Inter', sans-serif";
+  g.fillStyle = '#facc15';
+  g.fillText('CERTIFICATE OF PARTICIPATION', W / 2, 470);
+  g.strokeStyle = 'rgba(250,204,21,0.5)';
+  g.lineWidth = 2;
+  g.beginPath(); g.moveTo(W / 2 - 330, 505); g.lineTo(W / 2 + 330, 505); g.stroke();
+
+  spaced(2);
+  g.font = "400 34px 'Inter', sans-serif";
+  g.fillStyle = '#cbd5e1';
+  g.fillText('This is to certify that', W / 2, 600);
+
+  // Name, shrunk to fit long names.
+  stretch('expanded');
+  spaced(3);
+  let size = 110;
+  g.font = `900 ${size}px 'Archivo', sans-serif`;
+  while (g.measureText(name).width > W - 420 && size > 48) {
+    size -= 4;
+    g.font = `900 ${size}px 'Archivo', sans-serif`;
+  }
+  g.fillStyle = '#ffffff';
+  g.fillText(name, W / 2, 740);
+  stretch('normal');
+  g.strokeStyle = 'rgba(148,163,184,0.5)';
+  g.beginPath(); g.moveTo(W / 2 - 520, 780); g.lineTo(W / 2 + 520, 780); g.stroke();
+
+  spaced(8);
+  g.font = "600 28px 'IBM Plex Mono', monospace";
+  g.fillStyle = '#facc15';
+  g.fillText(`OPTIMUS ID · ${id}`, W / 2, 835);
+
+  spaced(1);
+  g.font = "400 34px 'Inter', sans-serif";
+  g.fillStyle = '#cbd5e1';
+  g.fillText("has participated in OPTIMUS '27, the National Level Techno Fest", W / 2, 925);
+  g.fillText('held at KPR Institute of Engineering and Technology, Coimbatore,', W / 2, 975);
+  g.fillText('on 4 – 5 February 2027.', W / 2, 1025);
+
+  // Signature lines
+  spaced(6);
+  g.font = "600 24px 'IBM Plex Mono', monospace";
+  g.fillStyle = '#94a3b8';
+  g.strokeStyle = 'rgba(148,163,184,0.6)';
+  ([[W * 0.22, 'FACULTY COORDINATOR'], [W * 0.78, 'PRINCIPAL']] as const).forEach(([sx, label]) => {
+    g.beginPath(); g.moveTo(sx - 200, 1180); g.lineTo(sx + 200, 1180); g.stroke();
+    g.fillText(label, sx, 1222);
+  });
+
+  // Sponsors, bottom centre
+  spaced(10);
+  g.font = "600 20px 'IBM Plex Mono', monospace";
+  g.fillStyle = '#67e8f9';
+  g.fillText('PRESENTED BY', W / 2, 1180);
+  const sh = 64;
+  const aw = acmw ? (acmw.naturalWidth / acmw.naturalHeight) * sh : 0;
+  const nw = nexora ? (nexora.naturalWidth / nexora.naturalHeight) * sh : 0;
+  const gap = acmw && nexora ? 40 : 0;
+  let lx = W / 2 - (aw + gap + nw) / 2;
+  if (acmw) { g.drawImage(acmw, lx, 1205, aw, sh); lx += aw + gap; }
+  if (nexora) g.drawImage(nexora, lx, 1205, nw, sh);
+  spaced(0);
+  return cv;
+}
+
+function CertificatePage({ onHome }: { onHome: () => void }) {
+  const [optimusId, setOptimusId] = useState('');
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [cert, setCert] = useState<{ url: string; file: string; name: string } | null>(null);
+  useEffect(() => () => { if (cert) URL.revokeObjectURL(cert.url); }, [cert]);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const id = optimusId.trim().toUpperCase();
+    const nm = name.trim().replace(/\s+/g, ' ');
+    if (!isValidOptimusId(id)) {
+      window.alert('Please enter a valid Optimus ID (letters, numbers and hyphens, e.g. OPT27-0142).');
+      return;
+    }
+    if (!nm) {
+      window.alert('Please enter your name.');
+      return;
+    }
+    if (nm !== nm.toUpperCase() || !/^[A-Z][A-Z .'-]*$/.test(nm)) {
+      window.alert('Name must be in CAPITAL LETTERS only (for example: SANJAI KUMAR).');
+      return;
+    }
+    setBusy(true);
+    try {
+      const cv = await drawCertificate(nm, id);
+      const blob = await new Promise<Blob | null>((r) => cv.toBlob(r, 'image/png'));
+      if (!blob) throw new Error('canvas');
+      setCert({ url: URL.createObjectURL(blob), file: `OPTIMUS27-Certificate-${id}.png`, name: nm });
+    } catch {
+      window.alert('Sorry, the certificate could not be created on this browser. Please try another browser.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="min-h-[calc(100vh-5rem)] px-4 sm:px-6 lg:px-8 pt-8 pb-28 sm:py-14 max-w-5xl mx-auto">
+      <button onClick={onHome} className="inline-flex items-center gap-2 text-xs font-mono font-bold tracking-widest text-slate-300 hover:text-white">
+        <ArrowLeft className="w-4 h-4" /> BACK TO HOME
+      </button>
+
+      <div className="text-center max-w-2xl mx-auto mt-8 mb-10 space-y-3">
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md text-xs font-mono border bg-amber-500/15 text-amber-300 border-amber-500/40">
+          <Award className="w-3.5 h-3.5" /> PARTICIPATION CERTIFICATE
+        </div>
+        <h1 className="text-4xl sm:text-6xl font-black tracking-tight uppercase bg-clip-text text-transparent bg-gradient-to-r from-slate-200 via-amber-400 to-yellow-500">
+          Get Your Certificate
+        </h1>
+        <p className="text-slate-300 text-sm sm:text-base">
+          Enter your Optimus ID and your name exactly as it should appear on the certificate, in capital letters.
+        </p>
+      </div>
+
+      <form onSubmit={submit} noValidate className="max-w-xl mx-auto rounded-3xl bg-slate-900/90 border border-slate-800 p-6 sm:p-8 space-y-5">
+        <div>
+          <label htmlFor="cert-id" className="text-xs font-mono font-bold tracking-widest text-slate-400 block mb-1.5">OPTIMUS ID</label>
+          <input
+            id="cert-id"
+            type="text"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="e.g. OPT27-0142"
+            value={optimusId}
+            onChange={(e) => setOptimusId(e.target.value.toUpperCase())}
+            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm font-mono tracking-wider focus:outline-none focus:border-amber-400"
+          />
+        </div>
+        <div>
+          <label htmlFor="cert-name" className="text-xs font-mono font-bold tracking-widest text-slate-400 block mb-1.5">NAME (CAPITAL LETTERS ONLY)</label>
+          <input
+            id="cert-name"
+            type="text"
+            autoComplete="name"
+            placeholder="e.g. SANJAI KUMAR"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm tracking-wide focus:outline-none focus:border-amber-400"
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={busy}
+          className="w-full py-4 rounded-xl bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 hover:from-amber-300 hover:to-yellow-400 text-black text-xs font-black tracking-widest flex items-center justify-center gap-2 disabled:opacity-60"
+        >
+          <Award className="w-4 h-4" /> {busy ? 'CREATING CERTIFICATE…' : 'GET CERTIFICATE'}
+        </button>
+      </form>
+
+      {cert && (
+        <div className="max-w-4xl mx-auto mt-10 space-y-4 text-center">
+          <img src={cert.url} alt={`OPTIMUS '27 certificate for ${cert.name}`} className="w-full rounded-xl border border-slate-800 shadow-2xl" />
+          <a
+            href={cert.url}
+            download={cert.file}
+            className="inline-flex items-center gap-2 px-8 py-4 rounded-xl bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 text-black text-xs font-black tracking-widest"
+          >
+            <Download className="w-4 h-4" /> DOWNLOAD CERTIFICATE
+          </a>
+        </div>
+      )}
+    </section>
+  );
+}
+
 /* ===================== PRIZE POOL SECTION ===================== */
 // Deterministic golden motes so React re-renders don't reshuffle them.
 const PRIZE_MOTES = Array.from({ length: 16 }, (_, i) => {
@@ -3664,6 +3924,19 @@ function HudCorners({ accent = 'cyan' }: { accent?: 'cyan' | 'amber' }) {
 /* ============================ APP ================================= */
 export default function App() {
   const [activeHero, setActiveHero] = useState<string | null>(null);
+  // The certificate page is its own page (#certificate), so Back/Forward and shared links work.
+  const [certPage, setCertPage] = useState(() => window.location.hash === '#certificate');
+  useEffect(() => {
+    const sync = () => setCertPage(window.location.hash === '#certificate');
+    window.addEventListener('hashchange', sync);
+    window.addEventListener('popstate', sync);
+    return () => { window.removeEventListener('hashchange', sync); window.removeEventListener('popstate', sync); };
+  }, []);
+  // Leaving the certificate page drops its hash so the home page shows again.
+  const leaveCertPage = () => {
+    if (window.location.hash === '#certificate') history.pushState(null, '', window.location.pathname + window.location.search);
+    setCertPage(false);
+  };
   // First visit to each hero plays the transformation sequence (3D assembly + HUD).
   const visitedRef = useRef<Set<string>>(new Set());
   const [intro, setIntro] = useState<{ key: string; id: number } | null>(null);
@@ -3760,17 +4033,27 @@ export default function App() {
       setIntro({ key, id: Date.now() });
     }
     setActiveHero(key);
+    leaveCertPage();
     setMobileMenuOpen(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
   const goHome = useCallback(() => {
     setActiveHero(null);
+    leaveCertPage();
     setMobileMenuOpen(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
+  const goCertificate = useCallback(() => {
+    setActiveHero(null);
+    setMobileMenuOpen(false);
+    if (window.location.hash !== '#certificate') history.pushState(null, '', '#certificate');
+    setCertPage(true);
+    window.scrollTo({ top: 0 });
   }, []);
   // The passes section lives on the home page, so leave any hero page first.
   const goPasses = useCallback(() => {
     setActiveHero(null);
+    leaveCertPage();
     setMobileMenuOpen(false);
     setTimeout(() => document.getElementById('passes')?.scrollIntoView({ behavior: 'smooth' }), 80);
   }, []);
@@ -3778,6 +4061,7 @@ export default function App() {
   // Leaders list sits on the home page too, so leave any hero page first (phone action bar).
   const goRoster = useCallback(() => {
     setActiveHero(null);
+    leaveCertPage();
     setMobileMenuOpen(false);
     setTimeout(() => document.getElementById('roster')?.scrollIntoView({ behavior: 'smooth' }), 80);
   }, []);
@@ -4114,7 +4398,7 @@ export default function App() {
           </button>
 
           <nav className="hidden lg:flex items-center gap-8 xl:gap-10 font-plex font-bold text-[13px] uppercase" style={{ letterSpacing: '0.2em' }}>
-            <button onClick={goHome} className={`transition-colors hover:text-white ${!activeHero ? t.text : 'text-white'}`}>HOME</button>
+            <button onClick={goHome} className={`transition-colors hover:text-white ${!activeHero && !certPage ? t.text : 'text-white'}`}>HOME</button>
             {HEROES.map((h) => (
               <button
                 key={h.key}
@@ -4125,6 +4409,7 @@ export default function App() {
               </button>
             ))}
             <button onClick={goPasses} className="transition-colors hover:text-white text-white">PASSES</button>
+            <button onClick={goCertificate} className={`transition-colors hover:text-white ${certPage ? t.text : 'text-white'}`}>CERTIFICATE</button>
           </nav>
 
           <div className="hidden sm:flex items-center gap-4">
@@ -4160,6 +4445,7 @@ export default function App() {
               </button>
             ))}
             <button onClick={goPasses} className="block w-full text-left py-2 text-slate-300 font-bold">PASSES <span className="text-slate-500">· Pricing &amp; access</span></button>
+            <button onClick={goCertificate} className="block w-full text-left py-2 text-slate-300 font-bold">CERTIFICATE <span className="text-slate-500">· Download yours</span></button>
             <button onClick={() => openRegister()} className={`mt-3 w-full px-4 py-2.5 text-xs rounded-lg ${t.btn} font-black`}>REGISTER</button>
           </div>
         )}
@@ -4168,7 +4454,9 @@ export default function App() {
       {/* ===================== MAIN ===================== */}
       <main className="relative z-10 pt-20">
 
-        {!active ? (
+        {certPage ? (
+          <CertificatePage onHome={goHome} />
+        ) : !active ? (
           /* ======================= HOME ======================= */
           <>
             {/* Hero band — pointer-events pass through to the 3D scene except on controls */}
@@ -4836,7 +5124,7 @@ export default function App() {
           style={{ paddingBottom: 'max(0.375rem, env(safe-area-inset-bottom))' }}
         >
           {([
-            { label: 'HOME', icon: <Home className="w-5 h-5" />, on: goHome, current: !active },
+            { label: 'HOME', icon: <Home className="w-5 h-5" />, on: goHome, current: !active && !certPage },
             { label: 'LEADERS', icon: <Users className="w-5 h-5" />, on: goRoster, current: !!active },
             { label: 'PASSES', icon: <Ticket className="w-5 h-5" />, on: goPasses, current: false }
           ] as const).map((b) => (
@@ -4868,7 +5156,7 @@ export default function App() {
       )}
 
       {/* ============ CYBERTRON HUD — bottom-left tactical panels (home only, hidden on phones) ============ */}
-      {gate === 'gone' && !active && (
+      {gate === 'gone' && !active && !certPage && (
         <div className="hud-flat fixed left-2.5 sm:left-5 bottom-2.5 sm:bottom-5 z-40 pointer-events-none hidden sm:flex flex-col gap-2 sm:gap-2.5 w-[min(60vw,270px)]">
           {/* SECTOR COORDINATES */}
           <div className="hud-panel-in relative overflow-hidden rounded-lg border border-cyan-400/30 bg-slate-950/80 px-3.5 py-2 sm:px-4 sm:py-2.5">
@@ -4900,7 +5188,7 @@ export default function App() {
       )}
 
       {/* ============ Partner logos — bottom-right (home only) ============ */}
-      {gate === 'gone' && !active && (
+      {gate === 'gone' && !active && !certPage && (
         <div
           className="hud-flat hud-panel-in fixed right-3 sm:right-8 bottom-2 sm:bottom-4 z-40 pointer-events-none hidden sm:flex flex-col items-center"
           style={{ perspective: '900px' }}
