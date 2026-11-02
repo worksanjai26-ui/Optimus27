@@ -37,7 +37,12 @@ import {
   Award,
   Download
 } from 'lucide-react';
+import QRCode from 'qrcode';
 import { listOverrides, listAnnouncements, addRegistration, recordVisit, Announcement, Overrides } from './adminData';
+import {
+  IDENTITY_DEMO, Profile, currentProfile, createProfile, signOutProfile, findProfile, qrPayload,
+  isOptimusId, isCapsName, normalizeName, checkMember, MemberCheck, attendedEvents
+} from './identity';
 // Public-folder files are served under the Vite base (the repo sub-path on GitHub Pages, '/' in dev).
 const BASE =import.meta.env.BASE_URL;
 
@@ -54,6 +59,11 @@ const BASE =import.meta.env.BASE_URL;
 
 // >>> Update this to the real fest start date/time when confirmed.
 const EVENT_DATE = new Date('2027-02-04T09:00:00');
+// Venue links used by the phone quick-info card and the footer.
+const VENUE_MAP = 'https://www.google.com/maps/search/?api=1&query=11.0782,77.1386';
+const FEST_ICS = 'data:text/calendar;charset=utf-8,' + encodeURIComponent(
+  'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//OPTIMUS 27//EN\r\nBEGIN:VEVENT\r\nUID:optimus27-fest@kpriet\r\nDTSTAMP:20270101T000000Z\r\nDTSTART;VALUE=DATE:20270204\r\nDTEND;VALUE=DATE:20270206\r\nSUMMARY:OPTIMUS \'27 - National Level Techno Fest\r\nLOCATION:KPR Institute of Engineering and Technology\\, Coimbatore\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n'
+);
 
 // Audio: the orchestrated Transformers theme looping in the background, plus one transformation
 // clip. Browsers allow audio only after a user gesture, so playback starts on the ENTER click.
@@ -3447,6 +3457,10 @@ const MOTION_CSS = `
 .prize-in .prize-heading-sweep { animation: prizeHeadSweep 1.3s ease-out .8s 1 both; }
 @keyframes prizeHeadSweep { 0% { background-position: 150% 0; opacity: 1; } 100% { background-position: -50% 0; opacity: 0; } }
 
+/* Audio pill equaliser bars */
+.eq-bar { transform-origin: bottom; animation: eqBar 0.9s ease-in-out infinite alternate; }
+@keyframes eqBar { from { transform: scaleY(0.35); } to { transform: scaleY(1); } }
+
 /* Weaker GPUs: drop effects that force full repaints while things animate over the 3D canvas. */
 .tier-low .prize-trophy, .tier-mid .prize-trophy { filter: none; }
 .tier-low .blur-2xl, .tier-low .blur-3xl, .tier-mid .blur-2xl, .tier-mid .blur-3xl { display: none; }
@@ -3458,7 +3472,7 @@ const MOTION_CSS = `
   .gate-grid, .gate-beam, .gate-ring, .gate-ring-rev, .gate-sheen,
   .gate-rise, .emblem-in, .scene-in, .fade-in,
   .prize-glow, .prize-mote, .prize-sweep, .prize-rise, .prize-plus-on, .prize-heading-sweep,
-  .tr-3d, .tr-cup, .tr-base, .tr-hL, .tr-hR, .tr-star { animation: none !important; }
+  .tr-3d, .tr-cup, .tr-base, .tr-hL, .tr-hR, .tr-star, .eq-bar { animation: none !important; }
   .prize-trophy, .prize-rise, .prize-plus, .tr-cup, .tr-base, .tr-hL, .tr-hR, .tr-star { opacity: 1 !important; transform: none !important; }
   .lift-card:hover, .stat-tile:hover { transform: none; }
   .gate-mote, .gate-sheen { display: none; }
@@ -3516,15 +3530,24 @@ function Countdown() {
   );
 }
 
-/* ===================== CERTIFICATE PAGE ===================== */
-// Optimus IDs: letters, digits and hyphens (e.g. OPT27-0142). There is no server list of issued IDs yet,
-// so only the format is checked; swap isValidOptimusId for a real lookup once IDs are issued.
-const OPTIMUS_ID_RE = /^[A-Z0-9][A-Z0-9-]{3,19}$/;
-// Certificates unlock once the fest is over (end of Feb 5, 2027). Until then the template stays
-// in the code but GET CERTIFICATE only tells visitors to come back after the event.
+/* ===================== SUB-PAGES (certificate, my pass) ===================== */
+// Each lives at its own hash so Back/Forward and shared links work.
+type SubPage = 'certificate' | 'mypass' | null;
+const subPageFromHash = (): SubPage => {
+  const h = window.location.hash;
+  if (h.startsWith('#certificate')) return 'certificate';
+  if (h === '#mypass') return 'mypass';
+  return null;
+};
+
+// Every event across the four arenas, for certificate titles.
+const ALL_EVENTS = HEROES.flatMap((h) => h.events.map((ev) => ({ ...ev, heroName: h.name, theme: h.theme })));
+
+// Certificates unlock once the fest is over (end of Feb 5, 2027). On the dev server,
+// add ?certdemo to the URL to preview them early with sample attendance.
 const CERTIFICATES_OPEN = new Date('2027-02-06T00:00:00');
-const certificatesOpen = () => Date.now() >= CERTIFICATES_OPEN.getTime();
-const isValidOptimusId = (id: string) => OPTIMUS_ID_RE.test(id);
+const certificatesOpen = () =>
+  (import.meta.env.DEV && new URLSearchParams(window.location.search).has('certdemo')) || Date.now() >= CERTIFICATES_OPEN.getTime();
 
 const loadImage = (src: string) => new Promise<HTMLImageElement | null>((res) => {
   const im = new Image();
@@ -3533,8 +3556,8 @@ const loadImage = (src: string) => new Promise<HTMLImageElement | null>((res) =>
   im.src = src;
 });
 
-// Draws the certificate onto a 2000×1414 canvas (A4 landscape ratio).
-async function drawCertificate(name: string, id: string) {
+// Draws one event's certificate onto a 2000×1414 canvas (A4 landscape ratio).
+async function drawCertificate(name: string, id: string, eventTitle: string) {
   const W = 2000, H = 1414;
   const cv = document.createElement('canvas');
   cv.width = W;
@@ -3546,9 +3569,17 @@ async function drawCertificate(name: string, id: string) {
   const [logo, kpr, acmw, nexora] = await Promise.all(
     ['assets/logo-hd.webp', 'assets/kpr-hd.png', 'assets/acmw.png', 'assets/nexora.png'].map((f) => loadImage(BASE + f))
   );
-  const ext = g as CanvasRenderingContext2D & { fontStretch?: string; letterSpacing?: string };
-  const stretch = (v: string) => { ext.fontStretch = v; };
-  const spaced = (px: number) => { ext.letterSpacing = `${px}px`; };
+  const stretch = (v: 'expanded' | 'normal') => { g.fontStretch = v; };
+  const spaced = (px: number) => { g.letterSpacing = `${px}px`; };
+  // Shrinks a font size until the text fits the given width.
+  const fit = (text: string, weight: number, family: string, start: number, min: number, maxW: number) => {
+    let size = start;
+    g.font = `${weight} ${size}px ${family}`;
+    while (g.measureText(text).width > maxW && size > min) {
+      size -= 2;
+      g.font = `${weight} ${size}px ${family}`;
+    }
+  };
 
   // Background: deep navy with a warm glow behind the name.
   const bg = g.createLinearGradient(0, 0, 0, H);
@@ -3610,42 +3641,45 @@ async function drawCertificate(name: string, id: string) {
   spaced(18);
   g.font = "700 46px 'Inter', sans-serif";
   g.fillStyle = '#facc15';
-  g.fillText('CERTIFICATE OF PARTICIPATION', W / 2, 470);
+  g.fillText('CERTIFICATE OF PARTICIPATION', W / 2, 450);
   g.strokeStyle = 'rgba(250,204,21,0.5)';
   g.lineWidth = 2;
-  g.beginPath(); g.moveTo(W / 2 - 330, 505); g.lineTo(W / 2 + 330, 505); g.stroke();
+  g.beginPath(); g.moveTo(W / 2 - 330, 485); g.lineTo(W / 2 + 330, 485); g.stroke();
 
   spaced(2);
   g.font = "400 34px 'Inter', sans-serif";
   g.fillStyle = '#cbd5e1';
-  g.fillText('This is to certify that', W / 2, 600);
+  g.fillText('This is to certify that', W / 2, 570);
 
   // Name, shrunk to fit long names.
   stretch('expanded');
   spaced(3);
-  let size = 110;
-  g.font = `900 ${size}px 'Archivo', sans-serif`;
-  while (g.measureText(name).width > W - 420 && size > 48) {
-    size -= 4;
-    g.font = `900 ${size}px 'Archivo', sans-serif`;
-  }
+  fit(name, 900, "'Archivo', sans-serif", 110, 48, W - 420);
   g.fillStyle = '#ffffff';
-  g.fillText(name, W / 2, 740);
+  g.fillText(name, W / 2, 700);
   stretch('normal');
   g.strokeStyle = 'rgba(148,163,184,0.5)';
-  g.beginPath(); g.moveTo(W / 2 - 520, 780); g.lineTo(W / 2 + 520, 780); g.stroke();
+  g.beginPath(); g.moveTo(W / 2 - 520, 740); g.lineTo(W / 2 + 520, 740); g.stroke();
 
   spaced(8);
   g.font = "600 28px 'IBM Plex Mono', monospace";
   g.fillStyle = '#facc15';
-  g.fillText(`OPTIMUS ID · ${id}`, W / 2, 835);
+  g.fillText(`OPTIMUS ID · ${id}`, W / 2, 792);
 
   spaced(1);
   g.font = "400 34px 'Inter', sans-serif";
   g.fillStyle = '#cbd5e1';
-  g.fillText("has participated in OPTIMUS '27, the National Level Techno Fest", W / 2, 925);
-  g.fillText('held at KPR Institute of Engineering and Technology, Coimbatore,', W / 2, 975);
-  g.fillText('on 4 – 5 February 2027.', W / 2, 1025);
+  g.fillText('has participated in', W / 2, 880);
+  // The event this certificate is for.
+  spaced(6);
+  fit(eventTitle, 700, "'Inter', sans-serif", 50, 30, W - 500);
+  g.fillStyle = '#facc15';
+  g.fillText(eventTitle, W / 2, 950);
+  spaced(1);
+  g.font = "400 34px 'Inter', sans-serif";
+  g.fillStyle = '#cbd5e1';
+  g.fillText("at OPTIMUS '27, the National Level Techno Fest held at KPR Institute of", W / 2, 1020);
+  g.fillText('Engineering and Technology, Coimbatore, on 4 – 5 February 2027.', W / 2, 1068);
 
   // Signature lines
   spaced(6);
@@ -3653,66 +3687,147 @@ async function drawCertificate(name: string, id: string) {
   g.fillStyle = '#94a3b8';
   g.strokeStyle = 'rgba(148,163,184,0.6)';
   ([[W * 0.22, 'FACULTY COORDINATOR'], [W * 0.78, 'PRINCIPAL']] as const).forEach(([sx, label]) => {
-    g.beginPath(); g.moveTo(sx - 200, 1180); g.lineTo(sx + 200, 1180); g.stroke();
-    g.fillText(label, sx, 1222);
+    g.beginPath(); g.moveTo(sx - 200, 1190); g.lineTo(sx + 200, 1190); g.stroke();
+    g.fillText(label, sx, 1232);
   });
 
   // Sponsors, bottom centre
   spaced(10);
   g.font = "600 20px 'IBM Plex Mono', monospace";
   g.fillStyle = '#67e8f9';
-  g.fillText('PRESENTED BY', W / 2, 1180);
+  g.fillText('PRESENTED BY', W / 2, 1185);
   const sh = 64;
   const aw = acmw ? (acmw.naturalWidth / acmw.naturalHeight) * sh : 0;
   const nw = nexora ? (nexora.naturalWidth / nexora.naturalHeight) * sh : 0;
   const gap = acmw && nexora ? 40 : 0;
   let lx = W / 2 - (aw + gap + nw) / 2;
-  if (acmw) { g.drawImage(acmw, lx, 1205, aw, sh); lx += aw + gap; }
-  if (nexora) g.drawImage(nexora, lx, 1205, nw, sh);
+  if (acmw) { g.drawImage(acmw, lx, 1210, aw, sh); lx += aw + gap; }
+  if (nexora) g.drawImage(nexora, lx, 1210, nw, sh);
   spaced(0);
   return cv;
 }
+
+const canvasUrl = (cv: HTMLCanvasElement) => new Promise<string>((res, rej) =>
+  cv.toBlob((b) => (b ? res(URL.createObjectURL(b)) : rej(new Error('canvas'))), 'image/png'));
+
+const DemoNote = ({ children }: { children: React.ReactNode }) => (
+  <p className="max-w-xl mx-auto mt-6 rounded-xl border border-dashed border-slate-700 bg-slate-950/70 px-4 py-3 text-[11px] font-mono text-slate-400 text-center">
+    DEMO · {children}
+  </p>
+);
+
+type CertResult = { eventId: string; title: string; arena: string; url: string; file: string };
 
 function CertificatePage({ onHome }: { onHome: () => void }) {
   const [optimusId, setOptimusId] = useState('');
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
-  const [cert, setCert] = useState<{ url: string; file: string; name: string } | null>(null);
-  const [notYet, setNotYet] = useState(false);
-  useEffect(() => () => { if (cert) URL.revokeObjectURL(cert.url); }, [cert]);
+  const [notice, setNotice] = useState<null | 'locked' | 'none'>(null);
+  const [results, setResults] = useState<{ name: string; id: string; certs: CertResult[] } | null>(null);
+  const [onResults, setOnResults] = useState(false);
+
+  useEffect(() => () => results?.certs.forEach((c) => URL.revokeObjectURL(c.url)), [results]);
+  // The results view is its own history entry (#certificate/results): Back returns to the form.
+  useEffect(() => {
+    if (window.location.hash === '#certificate/results') history.replaceState(null, '', '#certificate');
+    // Results stay in memory, so Back shows the form and Forward shows them again.
+    const onPop = () => setOnResults(window.location.hash === '#certificate/results');
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setNotice(null);
     if (!certificatesOpen()) {
-      setNotYet(true);
+      setNotice('locked');
       return;
     }
     const id = optimusId.trim().toUpperCase();
-    const nm = name.trim().replace(/\s+/g, ' ');
-    if (!isValidOptimusId(id)) {
-      window.alert('Please enter a valid Optimus ID (letters, numbers and hyphens, e.g. OPT27-0142).');
+    const nm = normalizeName(name);
+    if (!isOptimusId(id)) {
+      window.alert('Please enter a valid Optimus ID, e.g. OPT27-00142.');
       return;
     }
     if (!nm) {
       window.alert('Please enter your name.');
       return;
     }
-    if (nm !== nm.toUpperCase() || !/^[A-Z][A-Z .'-]*$/.test(nm)) {
+    if (!isCapsName(nm)) {
       window.alert('Name must be in CAPITAL LETTERS only (for example: SANJAI KUMAR).');
+      return;
+    }
+    const owner = findProfile(id);
+    if (owner && owner.name !== nm) {
+      window.alert('This name does not match the name registered for this Optimus ID.');
+      return;
+    }
+    const attended = attendedEvents(id)
+      .map((eid) => ALL_EVENTS.find((ev) => ev.id === eid))
+      .filter((ev): ev is (typeof ALL_EVENTS)[number] => !!ev);
+    if (!attended.length) {
+      setNotice('none');
       return;
     }
     setBusy(true);
     try {
-      const cv = await drawCertificate(nm, id);
-      const blob = await new Promise<Blob | null>((r) => cv.toBlob(r, 'image/png'));
-      if (!blob) throw new Error('canvas');
-      setCert({ url: URL.createObjectURL(blob), file: `OPTIMUS27-Certificate-${id}.png`, name: nm });
+      const certs: CertResult[] = [];
+      for (const ev of attended) {
+        const url = await canvasUrl(await drawCertificate(nm, id, ev.title));
+        certs.push({ eventId: ev.id, title: ev.title, arena: ev.heroName, url, file: `OPTIMUS27-${id}-${ev.id}.png` });
+      }
+      setResults({ name: nm, id, certs });
+      setOnResults(true);
+      history.pushState(null, '', '#certificate/results');
+      window.scrollTo({ top: 0 });
     } catch {
-      window.alert('Sorry, the certificate could not be created on this browser. Please try another browser.');
+      window.alert('Sorry, the certificates could not be created on this browser. Please try another browser.');
     } finally {
       setBusy(false);
     }
   };
+
+  if (results && onResults) {
+    return (
+      <section className="min-h-[calc(100vh-5rem)] px-4 sm:px-6 lg:px-8 pt-8 pb-28 sm:py-14 max-w-6xl mx-auto">
+        <button onClick={() => history.back()} className="inline-flex items-center gap-2 text-xs font-mono font-bold tracking-widest text-slate-300 hover:text-white">
+          <ArrowLeft className="w-4 h-4" /> BACK
+        </button>
+        <div className="text-center max-w-2xl mx-auto mt-8 mb-10 space-y-3">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md text-xs font-mono border bg-amber-500/15 text-amber-300 border-amber-500/40">
+            <Award className="w-3.5 h-3.5" /> ATTENDANCE VERIFIED
+          </div>
+          <h1 className="text-3xl sm:text-5xl font-black tracking-tight uppercase bg-clip-text text-transparent bg-gradient-to-r from-slate-200 via-amber-400 to-yellow-500">
+            Your Certificates
+          </h1>
+          <p className="text-slate-300 text-sm sm:text-base">
+            <span className="font-bold text-white">{results.name}</span> · <span className="font-mono">{results.id}</span> · {results.certs.length} event{results.certs.length > 1 ? 's' : ''} attended
+          </p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {results.certs.map((c) => (
+            <div key={c.eventId} className="rounded-3xl bg-slate-900/90 border border-slate-800 p-4 sm:p-5 space-y-4">
+              <img src={c.url} alt={`Certificate for ${c.title}`} className="w-full rounded-xl border border-slate-800" />
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-black tracking-wide text-white truncate">{c.title}</p>
+                  <p className="text-[11px] font-mono tracking-widest text-slate-400">{c.arena} ARENA</p>
+                </div>
+                <a
+                  href={c.url}
+                  download={c.file}
+                  className="shrink-0 inline-flex items-center gap-2 px-4 py-3 rounded-xl bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 text-black text-[11px] font-black tracking-widest"
+                >
+                  <Download className="w-4 h-4" /> DOWNLOAD
+                </a>
+              </div>
+            </div>
+          ))}
+        </div>
+        {IDENTITY_DEMO && <DemoNote>Attendance shown here is sample data until the QR attendance backend is connected.</DemoNote>}
+      </section>
+    );
+  }
 
   return (
     <section className="min-h-[calc(100vh-5rem)] px-4 sm:px-6 lg:px-8 pt-8 pb-28 sm:py-14 max-w-5xl mx-auto">
@@ -3728,7 +3843,7 @@ function CertificatePage({ onHome }: { onHome: () => void }) {
           Get Your Certificate
         </h1>
         <p className="text-slate-300 text-sm sm:text-base">
-          Enter your Optimus ID and your name exactly as it should appear on the certificate, in capital letters.
+          Enter your Optimus ID and your name in capital letters. You get one certificate for every event your attendance was recorded at.
         </p>
       </div>
 
@@ -3740,7 +3855,7 @@ function CertificatePage({ onHome }: { onHome: () => void }) {
             type="text"
             autoComplete="off"
             spellCheck={false}
-            placeholder="e.g. OPT27-0142"
+            placeholder="e.g. OPT27-00142"
             value={optimusId}
             onChange={(e) => setOptimusId(e.target.value.toUpperCase())}
             className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm font-mono tracking-wider focus:outline-none focus:border-amber-400"
@@ -3763,9 +3878,9 @@ function CertificatePage({ onHome }: { onHome: () => void }) {
           disabled={busy}
           className="w-full py-4 rounded-xl bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 hover:from-amber-300 hover:to-yellow-400 text-black text-xs font-black tracking-widest flex items-center justify-center gap-2 disabled:opacity-60"
         >
-          <Award className="w-4 h-4" /> {busy ? 'CREATING CERTIFICATE…' : 'GET CERTIFICATE'}
+          <Award className="w-4 h-4" /> {busy ? 'CREATING CERTIFICATES…' : 'GET CERTIFICATE'}
         </button>
-        {notYet && (
+        {notice === 'locked' && (
           <div role="status" className="rounded-2xl border border-amber-500/40 bg-amber-500/10 px-5 py-4 text-center space-y-1.5">
             <p className="text-sm font-black tracking-widest text-amber-300">CERTIFICATES OPEN AFTER THE EVENT</p>
             <p className="text-sm text-slate-300">
@@ -3773,20 +3888,138 @@ function CertificatePage({ onHome }: { onHome: () => void }) {
             </p>
           </div>
         )}
+        {notice === 'none' && (
+          <div role="status" className="rounded-2xl border border-rose-500/40 bg-rose-500/10 px-5 py-4 text-center space-y-1.5">
+            <p className="text-sm font-black tracking-widest text-rose-300">NO ATTENDANCE FOUND</p>
+            <p className="text-sm text-slate-300">
+              Certificates are issued only for events where your QR was scanned. Contact the organisers if this looks wrong.
+            </p>
+          </div>
+        )}
       </form>
+    </section>
+  );
+}
 
-      {cert && (
-        <div className="max-w-4xl mx-auto mt-10 space-y-4 text-center">
-          <img src={cert.url} alt={`OPTIMUS '27 certificate for ${cert.name}`} className="w-full rounded-xl border border-slate-800 shadow-2xl" />
-          <a
-            href={cert.url}
-            download={cert.file}
-            className="inline-flex items-center gap-2 px-8 py-4 rounded-xl bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 text-black text-xs font-black tracking-widest"
-          >
-            <Download className="w-4 h-4" /> DOWNLOAD CERTIFICATE
-          </a>
+function MyPassPage({ profile, onProfile, onHome }: { profile: Profile | null; onProfile: (p: Profile | null) => void; onHome: () => void }) {
+  const [form, setForm] = useState({ name: '', email: '', phone: '', college: '' });
+  const [qr, setQr] = useState('');
+  useEffect(() => {
+    if (!profile) { setQr(''); return; }
+    QRCode.toDataURL(qrPayload(profile), { width: 480, margin: 1, errorCorrectionLevel: 'M', color: { dark: '#020617', light: '#ffffff' } })
+      .then(setQr, () => setQr(''));
+  }, [profile]);
+
+  const create = (e: React.FormEvent) => {
+    e.preventDefault();
+    const name = normalizeName(form.name);
+    if (!name || !form.email.trim() || !form.phone.trim() || !form.college.trim()) {
+      window.alert('Please fill in all the details.');
+      return;
+    }
+    if (!isCapsName(name)) {
+      window.alert('Name must be in CAPITAL LETTERS only (for example: SANJAI KUMAR).');
+      return;
+    }
+    onProfile(createProfile({ name, email: form.email.trim(), phone: form.phone.trim(), college: form.college.trim() }));
+  };
+
+  const field = 'w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-amber-400';
+  const label = 'text-xs font-mono font-bold tracking-widest text-slate-400 block mb-1.5';
+
+  return (
+    <section className="min-h-[calc(100vh-5rem)] px-4 sm:px-6 lg:px-8 pt-8 pb-28 sm:py-14 max-w-5xl mx-auto">
+      <button onClick={onHome} className="inline-flex items-center gap-2 text-xs font-mono font-bold tracking-widest text-slate-300 hover:text-white">
+        <ArrowLeft className="w-4 h-4" /> BACK TO HOME
+      </button>
+
+      <div className="text-center max-w-2xl mx-auto mt-8 mb-10 space-y-3">
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md text-xs font-mono border bg-amber-500/15 text-amber-300 border-amber-500/40">
+          <QrCode className="w-3.5 h-3.5" /> MY PASS
         </div>
+        <h1 className="text-4xl sm:text-6xl font-black tracking-tight uppercase bg-clip-text text-transparent bg-gradient-to-r from-slate-200 via-amber-400 to-yellow-500">
+          {profile ? 'Your Optimus ID' : 'Get Your Optimus ID'}
+        </h1>
+        <p className="text-slate-300 text-sm sm:text-base">
+          {profile
+            ? 'Show this QR at every event so your attendance is recorded. Certificates are issued only for scanned events.'
+            : 'Every participant needs an Optimus ID to register, join a team and get certificates.'}
+        </p>
+      </div>
+
+      {profile ? (
+        <div className="max-w-xl mx-auto rounded-3xl bg-slate-900/90 border border-slate-800 p-6 sm:p-8 space-y-6 text-center">
+          <div>
+            <p className="text-[11px] font-mono tracking-[0.3em] text-slate-400">OPTIMUS ID</p>
+            <p className="mt-1 text-3xl sm:text-4xl font-black tracking-widest text-amber-300 font-mono">{profile.id}</p>
+            <p className="mt-2 text-lg font-black tracking-wide text-white">{profile.name}</p>
+            <p className="text-xs text-slate-400">{profile.college}</p>
+          </div>
+          <div className="mx-auto w-56 sm:w-64 aspect-square rounded-2xl bg-white p-3">
+            {qr && <img src={qr} alt={`QR code for ${profile.id}`} className="w-full h-full" />}
+          </div>
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            {qr && (
+              <a
+                href={qr}
+                download={`${profile.id}-QR.png`}
+                className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 text-black text-xs font-black tracking-widest"
+              >
+                <Download className="w-4 h-4" /> DOWNLOAD QR
+              </a>
+            )}
+            <button
+              onClick={() => { signOutProfile(); onProfile(null); }}
+              className="px-6 py-3 rounded-xl border border-slate-700 text-slate-300 hover:text-white text-xs font-mono font-bold tracking-widest"
+            >
+              SIGN OUT
+            </button>
+          </div>
+        </div>
+      ) : (
+        <form onSubmit={create} noValidate className="max-w-xl mx-auto rounded-3xl bg-slate-900/90 border border-slate-800 p-6 sm:p-8 space-y-5">
+          <button
+            type="button"
+            disabled
+            className="w-full py-3.5 rounded-xl bg-white/90 text-slate-500 text-xs font-black tracking-widest flex items-center justify-center gap-2 cursor-not-allowed"
+            title="Google sign-in arrives with the backend"
+          >
+            <span className="text-base leading-none">G</span> SIGN IN WITH GOOGLE · COMING SOON
+          </button>
+          <div className="flex items-center gap-3 text-[10px] font-mono tracking-widest text-slate-500">
+            <span className="h-px flex-1 bg-slate-800" /> FOR NOW, ENTER YOUR DETAILS <span className="h-px flex-1 bg-slate-800" />
+          </div>
+          <div>
+            <label htmlFor="mp-name" className={label}>NAME (CAPITAL LETTERS ONLY)</label>
+            <input id="mp-name" type="text" autoComplete="name" placeholder="e.g. SANJAI KUMAR" value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })} className={field} />
+          </div>
+          <div>
+            <label htmlFor="mp-college" className={label}>COLLEGE / INSTITUTION</label>
+            <input id="mp-college" type="text" autoComplete="organization" placeholder="Your college name" value={form.college}
+              onChange={(e) => setForm({ ...form, college: e.target.value })} className={field} />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="mp-email" className={label}>EMAIL</label>
+              <input id="mp-email" type="email" autoComplete="email" placeholder="you@gmail.com" value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })} className={field} />
+            </div>
+            <div>
+              <label htmlFor="mp-phone" className={label}>PHONE</label>
+              <input id="mp-phone" type="tel" autoComplete="tel" placeholder="+91 9876543210" value={form.phone}
+                onChange={(e) => setForm({ ...form, phone: e.target.value })} className={field} />
+            </div>
+          </div>
+          <button
+            type="submit"
+            className="w-full py-4 rounded-xl bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 hover:from-amber-300 hover:to-yellow-400 text-black text-xs font-black tracking-widest flex items-center justify-center gap-2"
+          >
+            <QrCode className="w-4 h-4" /> GET OPTIMUS ID
+          </button>
+        </form>
       )}
+      {IDENTITY_DEMO && <DemoNote>IDs are saved only in this browser until Google sign-in and the backend are connected.</DemoNote>}
     </section>
   );
 }
@@ -3941,18 +4174,19 @@ function HudCorners({ accent = 'cyan' }: { accent?: 'cyan' | 'amber' }) {
 /* ============================ APP ================================= */
 export default function App() {
   const [activeHero, setActiveHero] = useState<string | null>(null);
-  // The certificate page is its own page (#certificate), so Back/Forward and shared links work.
-  const [certPage, setCertPage] = useState(() => window.location.hash === '#certificate');
+  // Certificate and My Pass are their own pages (#certificate, #mypass), so Back/Forward and shared links work.
+  const [subPage, setSubPage] = useState<SubPage>(subPageFromHash);
+  const [profile, setProfile] = useState<Profile | null>(currentProfile);
   useEffect(() => {
-    const sync = () => setCertPage(window.location.hash === '#certificate');
+    const sync = () => setSubPage(subPageFromHash());
     window.addEventListener('hashchange', sync);
     window.addEventListener('popstate', sync);
     return () => { window.removeEventListener('hashchange', sync); window.removeEventListener('popstate', sync); };
   }, []);
-  // Leaving the certificate page drops its hash so the home page shows again.
-  const leaveCertPage = () => {
-    if (window.location.hash === '#certificate') history.pushState(null, '', window.location.pathname + window.location.search);
-    setCertPage(false);
+  // Leaving a sub-page drops its hash so the home page shows again.
+  const leaveSubPage = () => {
+    if (subPageFromHash()) history.pushState(null, '', window.location.pathname + window.location.search);
+    setSubPage(null);
   };
   // First visit to each hero plays the transformation sequence (3D assembly + HUD).
   const visitedRef = useRef<Set<string>>(new Set());
@@ -4024,11 +4258,15 @@ export default function App() {
     day: 0,
     teamSize: 2,
     teamName: '',
-    leaderName: '',
-    members: ['', '', ''],   // members 2–4 of a hackathon team
-    email: '',
-    phone: '',
-    college: ''
+    // Members 2–4 of a hackathon team, added by Optimus ID + name. The leader is the signed-in user.
+    members: [{ id: '', name: '' }, { id: '', name: '' }, { id: '', name: '' }]
+  });
+  const teamMembers = formData.members.slice(0, formData.teamSize - 1);
+  // Live check for each teammate row (ID format, exists, name matches, no repeats).
+  const memberChecks: (MemberCheck | null)[] = teamMembers.map((m, i) => {
+    if (!m.id.trim() && !m.name.trim()) return null;
+    const others = [profile?.id ?? '', ...teamMembers.slice(0, i).map((o) => o.id.trim())];
+    return checkMember(m.id.trim(), m.name, others);
   });
   const pass = passById(formData.pass);
   const pt = THEME[pass.theme];
@@ -4050,27 +4288,30 @@ export default function App() {
       setIntro({ key, id: Date.now() });
     }
     setActiveHero(key);
-    leaveCertPage();
+    leaveSubPage();
     setMobileMenuOpen(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
   const goHome = useCallback(() => {
     setActiveHero(null);
-    leaveCertPage();
+    leaveSubPage();
     setMobileMenuOpen(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
-  const goCertificate = useCallback(() => {
+  const goSubPage = useCallback((page: 'certificate' | 'mypass') => {
     setActiveHero(null);
     setMobileMenuOpen(false);
-    if (window.location.hash !== '#certificate') history.pushState(null, '', '#certificate');
-    setCertPage(true);
+    setIsRegisterOpen(false);
+    if (window.location.hash !== `#${page}`) history.pushState(null, '', `#${page}`);
+    setSubPage(page);
     window.scrollTo({ top: 0 });
   }, []);
+  const goCertificate = useCallback(() => goSubPage('certificate'), [goSubPage]);
+  const goMyPass = useCallback(() => goSubPage('mypass'), [goSubPage]);
   // The passes section lives on the home page, so leave any hero page first.
   const goPasses = useCallback(() => {
     setActiveHero(null);
-    leaveCertPage();
+    leaveSubPage();
     setMobileMenuOpen(false);
     setTimeout(() => document.getElementById('passes')?.scrollIntoView({ behavior: 'smooth' }), 80);
   }, []);
@@ -4078,7 +4319,7 @@ export default function App() {
   // Leaders list sits on the home page too, so leave any hero page first (phone action bar).
   const goRoster = useCallback(() => {
     setActiveHero(null);
-    leaveCertPage();
+    leaveSubPage();
     setMobileMenuOpen(false);
     setTimeout(() => document.getElementById('roster')?.scrollIntoView({ behavior: 'smooth' }), 80);
   }, []);
@@ -4162,15 +4403,30 @@ export default function App() {
 
   const handleRegisterSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!profile) return;
+    if (pass.team) {
+      const bad = memberChecks.findIndex((c) => c !== 'ok');
+      if (bad !== -1) {
+        const why: Record<MemberCheck, string> = {
+          'ok': '',
+          'bad-format': 'enter a valid Optimus ID (e.g. OPT27-00142)',
+          'not-found': 'no participant has this Optimus ID yet — they must get their own ID first',
+          'name-mismatch': 'the name does not match this Optimus ID (use capital letters, exactly as registered)',
+          'duplicate': 'this Optimus ID is already in the team'
+        };
+        window.alert(`Member ${bad + 2}: ${memberChecks[bad] ? why[memberChecks[bad]!] : 'enter their Optimus ID and name'}.`);
+        return;
+      }
+    }
     addRegistration({
       pass: pass.id,
       day: pass.pickDay ? formData.day : null,
       team_name: pass.team ? formData.teamName.trim() : null,
-      leader_name: formData.leaderName.trim(),
-      members: pass.team ? formData.members.slice(0, formData.teamSize - 1).map((m) => m.trim()) : [],
-      email: formData.email.trim(),
-      phone: formData.phone.trim(),
-      college: formData.college.trim(),
+      leader_name: `${profile.name} (${profile.id})`,
+      members: pass.team ? teamMembers.map((m) => `${normalizeName(m.name)} (${m.id.trim()})`) : [],
+      email: profile.email,
+      phone: profile.phone,
+      college: profile.college,
       amount: passTotal
     });
     setRegisterSuccess(true);
@@ -4369,7 +4625,7 @@ export default function App() {
 
       {/* ===================== HEADER ===================== */}
       <header className={`fixed top-0 left-0 right-0 z-50 ${entered ? 'fade-in' : ''}`}>
-        <div className="relative px-6 sm:px-12 lg:px-16 h-20 flex items-center justify-between gap-3">
+        <div className="relative px-5 sm:px-10 lg:px-6 2xl:px-10 h-20 flex items-center justify-between gap-3">
 
           <button onClick={goHome} className="flex items-center gap-3 text-left">
             <div className="relative w-10 h-10 flex items-center justify-center">
@@ -4414,8 +4670,8 @@ export default function App() {
             </div>
           </button>
 
-          <nav className="hidden lg:flex items-center gap-8 xl:gap-10 font-plex font-bold text-[13px] uppercase" style={{ letterSpacing: '0.2em' }}>
-            <button onClick={goHome} className={`transition-colors hover:text-white ${!activeHero && !certPage ? t.text : 'text-white'}`}>HOME</button>
+          <nav className="hidden xl:flex ml-auto mr-2 2xl:mr-4 items-center gap-[18px] 2xl:gap-9 font-plex font-bold text-[12px] 2xl:text-[13px] uppercase tracking-[0.12em] 2xl:tracking-[0.16em]">
+            <button onClick={goHome} className={`transition-colors hover:text-white ${!activeHero && !subPage ? t.text : 'text-white'}`}>HOME</button>
             {HEROES.map((h) => (
               <button
                 key={h.key}
@@ -4426,35 +4682,29 @@ export default function App() {
               </button>
             ))}
             <button onClick={goPasses} className="transition-colors hover:text-white text-white">PASSES</button>
-            <button onClick={goCertificate} className={`transition-colors hover:text-white ${certPage ? t.text : 'text-white'}`}>CERTIFICATE</button>
+            <button onClick={goCertificate} className={`transition-colors hover:text-white ${subPage === 'certificate' ? t.text : 'text-white'}`}>CERTIFICATE</button>
           </nav>
 
           <div className="hidden sm:flex items-center gap-4">
             <button
-              onClick={toggleSound}
-              className="p-2 text-slate-400 hover:text-white transition-colors"
-              title={soundEnabled ? 'Mute music' : 'Play music'}
+              onClick={goMyPass}
+              title={profile ? `My pass · ${profile.id}` : 'Get your Optimus ID'}
+              className={`hidden md:inline-flex items-center gap-2 px-3 2xl:px-4 py-2.5 rounded-xl border ${subPage === 'mypass' ? 'border-amber-400 text-amber-300' : 'border-slate-700 text-slate-200 hover:border-slate-500'} text-xs font-black tracking-widest font-mono`}
             >
-              {soundEnabled ? <Volume2 className={`w-5 h-5 ${t.text}`} /> : <VolumeX className="w-5 h-5 text-slate-500" />}
-            </button>
-            <button
-              onClick={() => openRegister()}
-              className={`px-5 py-2.5 rounded-xl ${t.btn} text-xs font-black tracking-widest shadow-lg transition-transform active:scale-95`}
-            >
-              REGISTER
+              <QrCode className="w-4 h-4" /> <span className="hidden 2xl:inline">{profile ? profile.id : 'GET OPTIMUS ID'}</span>
             </button>
           </div>
 
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className={`lg:hidden p-2 border ${t.ring} bg-slate-950/40 text-slate-200`}
+            className={`xl:hidden p-2 border ${t.ring} bg-slate-950/40 text-slate-200`}
           >
             {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
           </button>
         </div>
 
         {mobileMenuOpen && (
-          <div className="lg:hidden border-b border-slate-800 bg-slate-950/95 p-4 space-y-1 font-mono text-xs">
+          <div className="xl:hidden border-b border-slate-800 bg-slate-950/95 p-4 space-y-1 font-mono text-xs">
             <button onClick={goHome} className="block w-full text-left py-3 text-slate-300 font-bold">HOME</button>
             {HEROES.map((h) => (
               <button key={h.key} onClick={() => goHero(h.key)} className={`block w-full text-left py-3 font-bold ${THEME[h.theme].text}`}>
@@ -4463,6 +4713,7 @@ export default function App() {
             ))}
             <button onClick={goPasses} className="block w-full text-left py-2 text-slate-300 font-bold">PASSES <span className="text-slate-500">· Pricing &amp; access</span></button>
             <button onClick={goCertificate} className="block w-full text-left py-2 text-slate-300 font-bold">CERTIFICATE <span className="text-slate-500">· Download yours</span></button>
+            <button onClick={goMyPass} className="block w-full text-left py-2 text-amber-300 font-bold">MY PASS <span className="text-slate-500">· {profile ? profile.id : 'Get your Optimus ID'}</span></button>
             <button onClick={() => openRegister()} className={`mt-3 w-full px-4 py-2.5 text-xs rounded-lg ${t.btn} font-black`}>REGISTER</button>
           </div>
         )}
@@ -4471,8 +4722,10 @@ export default function App() {
       {/* ===================== MAIN ===================== */}
       <main className="relative z-10 pt-20">
 
-        {certPage ? (
+        {subPage === 'certificate' ? (
           <CertificatePage onHome={goHome} />
+        ) : subPage === 'mypass' ? (
+          <MyPassPage profile={profile} onProfile={setProfile} onHome={goHome} />
         ) : !active ? (
           /* ======================= HOME ======================= */
           <>
@@ -4533,7 +4786,7 @@ export default function App() {
                     <div className="mt-0.5 text-sm font-bold text-slate-100">KPR Institute of Engineering and Technology</div>
                     <div className="mt-3 grid grid-cols-2 gap-2">
                       <a
-                        href="https://www.google.com/maps/search/?api=1&query=11.0782,77.1386"
+                        href={VENUE_MAP}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex items-center justify-center gap-1.5 rounded-lg bg-slate-900 border border-slate-700 py-3 text-[11px] font-mono font-bold tracking-widest text-cyan-300 active:scale-95"
@@ -4541,9 +4794,7 @@ export default function App() {
                         <MapPin className="w-4 h-4" /> DIRECTIONS
                       </a>
                       <a
-                        href={'data:text/calendar;charset=utf-8,' + encodeURIComponent(
-                          'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//OPTIMUS 27//EN\r\nBEGIN:VEVENT\r\nUID:optimus27-fest@kpriet\r\nDTSTAMP:20270101T000000Z\r\nDTSTART;VALUE=DATE:20270204\r\nDTEND;VALUE=DATE:20270206\r\nSUMMARY:OPTIMUS \'27 - National Level Techno Fest\r\nLOCATION:KPR Institute of Engineering and Technology\\, Coimbatore\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n'
-                        )}
+                        href={FEST_ICS}
                         download="optimus27.ics"
                         className="flex items-center justify-center gap-1.5 rounded-lg bg-slate-900 border border-slate-700 py-3 text-[11px] font-mono font-bold tracking-widest text-amber-300 active:scale-95"
                       >
@@ -4597,7 +4848,7 @@ export default function App() {
                         {bumblebee.faction}
                       </span>
                     </div>
-                    <h3 className={`text-4xl sm:text-6xl font-black tracking-tight uppercase ${bt.text}`}>
+                    <h3 className={`text-3xl sm:text-5xl font-black tracking-tight uppercase ${bt.text}`}>
                       {bumblebee.name}
                     </h3>
                     <p className="text-slate-300 text-sm sm:text-base max-w-2xl">
@@ -4639,7 +4890,9 @@ export default function App() {
                         <h3 className={`text-xl xl:text-2xl font-black tracking-tight uppercase ${ht.hoverText} transition-colors`}>
                           {h.name}
                         </h3>
-                        <p className="text-slate-400 text-sm">{h.tagline}</p>
+                        <p className="text-slate-300 text-sm leading-relaxed">
+                          <span className="font-bold text-white">{h.tagline}.</span> {h.lore}
+                        </p>
                       </div>
                       <div className="relative pt-6 mt-6 border-t border-slate-800/80 flex items-center justify-between">
                         <span className={`text-xs font-mono ${ht.text}`}>
@@ -4667,48 +4920,53 @@ export default function App() {
                 </p>
               </div>
 
-              {/* 2 × 2: Hackathon + Exclusive on top, One-Day + Two-Day below. */}
-              {[['hackathon', 'exclusive'], ['oneday', 'twoday']].map((ids) => ids.map((id) => passById(id as PassId))).map((row, ri) => (
-                <div key={ri} className={`grid grid-cols-1 md:grid-cols-2 gap-6 ${ri === 0 ? 'mb-6' : ''}`}>
-                  {row.map((p) => {
-                    const ptk = THEME[p.theme];
-                    return (
-                      <div
-                        key={p.id}
-                        className={`lift-card relative overflow-hidden rounded-3xl bg-slate-900/90 border border-slate-800 ${onHover(ptk.ring)} ${onHover(ptk.glow)} p-6 sm:p-8 flex flex-col`}
-                      >
-                        <div className={`absolute -top-12 -right-12 w-44 h-44 rounded-full bg-gradient-to-br ${ptk.grad} opacity-15 blur-3xl`} />
-                        <div className="relative flex items-center justify-between gap-3">
-                          <span className={`text-xs font-mono font-bold tracking-widest ${ptk.text}`}>{p.name}</span>
-                          {p.badge && (
-                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold tracking-widest border ${ptk.chip}`}>
-                              ★ {p.badge}
-                            </span>
-                          )}
-                        </div>
-                        <div className="relative mt-4 flex items-baseline gap-2">
-                          <span className="font-num font-bold leading-none text-4xl sm:text-5xl">{inr(p.price)}</span>
-                          <span className="text-xs font-mono text-slate-400">/ {p.team ? 'member' : 'person'}</span>
-                        </div>
-                        <p className="relative mt-2 text-sm text-slate-300">{p.blurb}</p>
-                        <ul className="relative mt-5 space-y-2 text-sm text-slate-300 flex-1">
-                          {p.perks.map((perk) => (
-                            <li key={perk} className="flex items-start gap-2">
-                              <CheckCircle className={`w-4 h-4 mt-0.5 shrink-0 ${ptk.text}`} /> {perk}
-                            </li>
-                          ))}
-                        </ul>
-                        <button
-                          onClick={() => openRegister(p.id)}
-                          className={`relative mt-6 w-full py-3.5 rounded-xl ${ptk.btn} text-xs font-black tracking-widest flex items-center justify-center gap-2 transition-transform active:scale-[0.98]`}
-                        >
-                          GET {p.name} <ChevronRight className="w-4 h-4" />
-                        </button>
+              {/* Four pass cards in a row (two on tablets, one on phones): name + icon, duration,
+                  what's included, price, perks, and a full-width booking button pinned to the bottom. */}
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5">
+                {(['hackathon', 'exclusive', 'oneday', 'twoday'] as PassId[]).map((id) => {
+                  const p = passById(id);
+                  const ptk = THEME[p.theme];
+                  const meta: Record<PassId, { term: string; includes: string }> = {
+                    hackathon: { term: '24-HOUR · TEAMS OF 2 – 4', includes: 'FLAGSHIP 24-HOUR HACKATHON' },
+                    exclusive: { term: '2-DAY · ALL ACCESS', includes: 'EVERY EVENT EXCEPT THE HACKATHON' },
+                    oneday: { term: '1-DAY', includes: '1 PRESENTATION + 1 WORKSHOP + 1 NON-TECH' },
+                    twoday: { term: '2-DAY', includes: '2 PRESENTATIONS + 2 WORKSHOPS + 2 NON-TECH' }
+                  };
+                  return (
+                    <div
+                      key={p.id}
+                      className={`lift-card relative overflow-hidden rounded-3xl bg-slate-950/95 border ${ptk.ring} ${onHover(ptk.glow)} p-6 flex flex-col`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <h3 className={`text-base sm:text-lg font-black tracking-[0.1em] uppercase whitespace-nowrap ${ptk.text}`}>{p.name}</h3>
+                        <Ticket className={`w-5 h-5 mt-0.5 shrink-0 ${ptk.text}`} />
                       </div>
-                    );
-                  })}
-                </div>
-              ))}
+                      <p className="mt-1 text-[11px] font-mono tracking-widest text-slate-400">{meta[id].term}</p>
+                      <span className={`mt-5 self-start px-3 py-1.5 rounded-md border text-[10px] font-mono font-bold tracking-wider ${ptk.chip}`}>
+                        {meta[id].includes}
+                      </span>
+                      <div className="mt-6 flex items-baseline gap-2">
+                        <span className="font-num font-bold leading-none text-4xl sm:text-5xl text-white">{inr(p.price)}</span>
+                        <span className="text-[11px] text-slate-400">{p.team ? 'Per Member' : 'Per Participant'}</span>
+                      </div>
+                      <div className="mt-6 h-px bg-slate-800" />
+                      <ul className="mt-5 space-y-3 text-sm text-slate-300 flex-1">
+                        {p.perks.map((perk) => (
+                          <li key={perk} className="flex items-start gap-2.5">
+                            <CheckCircle className={`w-4 h-4 mt-0.5 shrink-0 ${ptk.text}`} /> {perk}
+                          </li>
+                        ))}
+                      </ul>
+                      <button
+                        onClick={() => openRegister(p.id)}
+                        className={`mt-7 w-full py-3.5 rounded-xl ${ptk.btn} text-[11px] font-black tracking-widest flex items-center justify-center gap-2 transition-transform active:scale-[0.98]`}
+                      >
+                        <Ticket className="w-4 h-4" /> BOOK {p.name} <span className="opacity-70">| {inr(p.price)}</span>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
             </section>
 
             {/* Highlights strip */}
@@ -4910,7 +5168,22 @@ export default function App() {
               <X className="w-5 h-5" />
             </button>
 
-            {!registerSuccess ? (
+            {!profile && !registerSuccess ? (
+              <div className="text-center space-y-5 py-4">
+                <div className="mx-auto w-14 h-14 rounded-2xl bg-amber-500/15 border border-amber-500/40 flex items-center justify-center">
+                  <QrCode className="w-7 h-7 text-amber-300" />
+                </div>
+                <div className="space-y-2">
+                  <h3 className="text-2xl font-black uppercase">Get your Optimus ID first</h3>
+                  <p className="text-sm text-slate-400">
+                    Registration, team entry and certificates all use your Optimus ID. Get yours in a minute, then come back to register.
+                  </p>
+                </div>
+                <button onClick={goMyPass} className={`w-full py-4 rounded-xl ${pt.btn} text-xs font-black tracking-widest`}>
+                  GET OPTIMUS ID
+                </button>
+              </div>
+            ) : !registerSuccess ? (
               <form onSubmit={handleRegisterSubmit} className="space-y-4">
                 <div className="space-y-1">
                   <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded text-[10px] font-mono border ${pt.chip}`}>
@@ -4996,62 +5269,58 @@ export default function App() {
                     </div>
                   )}
 
-                  <div>
-                    <label className="text-xs font-mono text-slate-400 block mb-1">{pass.team ? 'TEAM LEADER NAME' : 'FULL NAME'}</label>
-                    <input
-                      type="text" required placeholder="e.g., Alex Prime"
-                      value={formData.leaderName}
-                      onChange={(e) => setFormData({ ...formData, leaderName: e.target.value })}
-                      className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 text-sm focus:outline-none focus:border-slate-500"
-                    />
+                  {/* The signed-in participant: team leader on a team pass, the pass holder otherwise. */}
+                  <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-mono tracking-widest text-slate-500">{pass.team ? 'TEAM LEADER' : 'PASS HOLDER'}</p>
+                      <p className="text-sm font-black tracking-wide text-white truncate">{profile?.name}</p>
+                      <p className="text-[11px] text-slate-400 truncate">{profile?.college}</p>
+                    </div>
+                    <span className={`shrink-0 text-xs font-mono font-bold tracking-widest ${pt.text}`}>{profile?.id}</span>
                   </div>
 
-                  {pass.team && formData.members.slice(0, formData.teamSize - 1).map((m, i) => (
-                    <div key={i}>
-                      <label className="text-xs font-mono text-slate-400 block mb-1">MEMBER {i + 2} NAME</label>
-                      <input
-                        type="text" required placeholder={`Member ${i + 2}`}
-                        value={m}
-                        onChange={(e) => {
-                          const members = [...formData.members];
-                          members[i] = e.target.value;
-                          setFormData({ ...formData, members });
-                        }}
-                        className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 text-sm focus:outline-none focus:border-slate-500"
-                      />
-                    </div>
-                  ))}
-
-                  <div>
-                    <label className="text-xs font-mono text-slate-400 block mb-1">COLLEGE / INSTITUTION</label>
-                    <input
-                      type="text" required placeholder="Your college name"
-                      value={formData.college}
-                      onChange={(e) => setFormData({ ...formData, college: e.target.value })}
-                      className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 text-sm focus:outline-none focus:border-slate-500"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-xs font-mono text-slate-400 block mb-1">EMAIL</label>
-                      <input
-                        type="email" required placeholder="cadet@college.edu"
-                        value={formData.email}
-                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                        className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 text-sm focus:outline-none focus:border-slate-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs font-mono text-slate-400 block mb-1">PHONE</label>
-                      <input
-                        type="tel" required placeholder="+91 9876543210"
-                        value={formData.phone}
-                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                        className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 text-sm focus:outline-none focus:border-slate-500"
-                      />
-                    </div>
-                  </div>
+                  {pass.team && teamMembers.map((m, i) => {
+                    const check = memberChecks[i];
+                    const status: Record<MemberCheck, [string, string]> = {
+                      'ok': ['text-emerald-400', 'VERIFIED'],
+                      'bad-format': ['text-slate-500', 'ID FORMAT: OPT27-00000'],
+                      'not-found': ['text-rose-400', 'NO SUCH OPTIMUS ID'],
+                      'name-mismatch': ['text-rose-400', 'NAME DOES NOT MATCH THIS ID'],
+                      'duplicate': ['text-rose-400', 'ALREADY IN TEAM']
+                    };
+                    const setMember = (patch: Partial<{ id: string; name: string }>) => {
+                      const members = [...formData.members];
+                      members[i] = { ...members[i], ...patch };
+                      setFormData({ ...formData, members });
+                    };
+                    return (
+                      <div key={i} className="space-y-1.5">
+                        <div className="flex items-center justify-between gap-3">
+                          <label className="text-xs font-mono text-slate-400">MEMBER {i + 2}</label>
+                          {check && <span className={`text-[10px] font-mono font-bold tracking-widest ${status[check][0]}`}>{status[check][1]}</span>}
+                        </div>
+                        <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-2">
+                          <input
+                            type="text" required placeholder="OPT27-00000" spellCheck={false}
+                            aria-label={`Member ${i + 2} Optimus ID`}
+                            value={m.id}
+                            onChange={(e) => setMember({ id: e.target.value.toUpperCase() })}
+                            className="w-full px-3 py-3 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 text-sm font-mono focus:outline-none focus:border-slate-500"
+                          />
+                          <input
+                            type="text" required placeholder="NAME IN CAPITALS"
+                            aria-label={`Member ${i + 2} name`}
+                            value={m.name}
+                            onChange={(e) => setMember({ name: e.target.value })}
+                            className="w-full px-3 py-3 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 text-sm focus:outline-none focus:border-slate-500"
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {pass.team && (
+                    <p className="text-[11px] text-slate-500">Every teammate needs their own Optimus ID. Ask them to get one from MY PASS first.</p>
+                  )}
 
                   {/* Order summary */}
                   <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 font-mono text-xs space-y-1.5">
@@ -5088,11 +5357,11 @@ export default function App() {
                     {pass.team && (
                       <div className="flex justify-between gap-3"><span className="text-slate-500">TEAM:</span><span className="text-white font-bold text-right">{formData.teamName}</span></div>
                     )}
-                    <div className="flex justify-between gap-3"><span className="text-slate-500">{pass.team ? 'LEADER:' : 'NAME:'}</span><span className="text-slate-300 text-right">{formData.leaderName}</span></div>
+                    <div className="flex justify-between gap-3"><span className="text-slate-500">{pass.team ? 'LEADER:' : 'NAME:'}</span><span className="text-slate-300 text-right">{profile?.name} · {profile?.id}</span></div>
                     {pass.team && (
-                      <div className="flex justify-between gap-3"><span className="text-slate-500">MEMBERS:</span><span className="text-slate-300 text-right">{formData.members.slice(0, formData.teamSize - 1).join(', ')}</span></div>
+                      <div className="flex justify-between gap-3"><span className="text-slate-500">MEMBERS:</span><span className="text-slate-300 text-right">{teamMembers.map((m) => `${normalizeName(m.name)} · ${m.id}`).join(', ')}</span></div>
                     )}
-                    <div className="flex justify-between gap-3"><span className="text-slate-500">COLLEGE:</span><span className="text-slate-300 text-right">{formData.college}</span></div>
+                    <div className="flex justify-between gap-3"><span className="text-slate-500">COLLEGE:</span><span className="text-slate-300 text-right">{profile?.college}</span></div>
                     <div className="flex justify-between gap-3"><span className="text-slate-500">VALID:</span><span className={`${pt.text} text-right`}>{passValid}</span></div>
                     <div className="flex justify-between gap-3"><span className="text-slate-500">AMOUNT:</span><span className="text-white font-bold text-right">{inr(passTotal)}</span></div>
                   </div>
@@ -5120,18 +5389,132 @@ export default function App() {
       )}
 
       {/* ===================== FOOTER ===================== */}
-      <footer className="border-t border-slate-800/80 bg-slate-950/90 pt-10 pb-28 lg:pb-10 relative z-10 text-xs text-slate-400 font-mono">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col md:flex-row items-center justify-between gap-6 text-center md:text-left">
-          <div className="flex items-center gap-2">
-            <Zap className={`w-4 h-4 ${t.text}`} />
-            <span>OPTIMUS '27 · National Level Techno Fest</span>
+      <footer className="border-t border-slate-800/80 bg-slate-950/95 relative z-10 pt-14 pb-28 lg:pb-12 text-slate-400">
+        <div className="max-w-7xl mx-auto px-5 sm:px-8">
+          {/* Brand + presented-by */}
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-8">
+            <div className="space-y-4 max-w-xl">
+              <button onClick={goHome} className="flex items-center gap-3 text-left">
+                <img src={BASE + 'assets/logo-hd.webp'} alt="" width={44} height={44} decoding="async" className="w-11 h-11 object-contain" />
+                <div>
+                  <div className="font-black uppercase leading-none text-3xl" style={{ fontFamily: "'Archivo', sans-serif", fontStretch: '62%', letterSpacing: '0.14em' }}>
+                    <span className="text-slate-100">OPTIMUS</span> <span className="text-amber-400">'27</span>
+                  </div>
+                  <div className="mt-1.5 font-plex text-[11px] font-semibold tracking-[0.3em] text-slate-400">KPRIET · COIMBATORE</div>
+                </div>
+              </button>
+              <p className="text-sm leading-relaxed text-slate-300">
+                National Level Techno Fest at KPR Institute of Engineering and Technology, Coimbatore. Four arenas, ten-plus events and a 24-hour flagship hackathon on Feb 4 – 5, 2027.
+              </p>
+            </div>
+            <div className="flex items-center gap-4 self-start rounded-full border border-slate-700/80 px-5 py-2.5">
+              <span className="font-plex text-[10px] font-semibold tracking-[0.3em] text-cyan-200/80">PRESENTED BY</span>
+              <img src={BASE + 'assets/acmw.png'} alt="ACM-W" decoding="async" className="h-6 w-auto object-contain" />
+              <img src={BASE + 'assets/nexora.png'} alt="NEXORA" decoding="async" className="h-7 w-auto object-contain" />
+            </div>
           </div>
-          <div className="text-slate-500">
-            KPR Institute of Engineering and Technology, Coimbatore · Feb 4–5, 2027
+
+          <div className="my-10 h-px bg-slate-800/80" />
+
+          {/* Link columns */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-10">
+            {([
+              {
+                title: 'EXPLORE',
+                links: [
+                  { label: 'HOME', on: goHome },
+                  ...HEROES.map((h) => ({ label: h.name, on: () => goHero(h.key) }))
+                ]
+              },
+              {
+                title: 'PARTICIPATE',
+                links: [
+                  { label: 'PASSES & TICKETS', on: goPasses },
+                  { label: 'REGISTER', on: () => openRegister() },
+                  { label: 'MY PASS', on: goMyPass },
+                  { label: 'CERTIFICATE', on: goCertificate }
+                ]
+              },
+              {
+                title: 'ARENAS',
+                links: HEROES.map((h) => ({ label: h.tagline.toUpperCase(), on: () => goHero(h.key) }))
+              },
+              {
+                title: 'VENUE',
+                links: [
+                  { label: 'KPR INSTITUTE OF ENGINEERING AND TECHNOLOGY' },
+                  { label: 'COIMBATORE · FEB 4 – 5, 2027' },
+                  { label: 'GET DIRECTIONS', href: VENUE_MAP },
+                  { label: 'ADD TO CALENDAR', href: FEST_ICS, download: 'optimus27.ics' }
+                ]
+              }
+            ] as { title: string; links: { label: string; on?: () => void; href?: string; download?: string }[] }[]).map((col) => (
+              <div key={col.title} className="space-y-4">
+                <p className="font-plex text-[11px] font-semibold tracking-[0.35em] text-slate-500">{col.title}</p>
+                <ul className="space-y-3">
+                  {col.links.map((l) => {
+                    const cls = 'font-plex text-[13px] font-bold tracking-wider text-slate-300 hover:text-white transition-colors';
+                    return (
+                      <li key={l.label}>
+                        {l.on ? (
+                          <button onClick={l.on} className={`${cls} text-left`}>{l.label}</button>
+                        ) : l.href ? (
+                          <a
+                            href={l.href}
+                            {...(l.download ? { download: l.download } : { target: '_blank', rel: 'noopener noreferrer' })}
+                            className={`${cls} inline-flex items-center gap-1.5`}
+                          >
+                            {l.label} {l.download ? <CalendarPlus className="w-3.5 h-3.5" /> : <MapPin className="w-3.5 h-3.5" />}
+                          </a>
+                        ) : (
+                          <span className="font-plex text-[13px] font-semibold tracking-wider text-slate-400">{l.label}</span>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))}
           </div>
-          <div className="text-slate-500">© 2027 OPTIMUS '27</div>
+
+          <div className="mt-12 h-px bg-slate-800/80" />
+
+          {/* Bottom row */}
+          <div className="mt-8 flex flex-col sm:flex-row items-center justify-between gap-5">
+            <p className="font-plex text-[11px] font-semibold tracking-[0.2em] text-slate-500 text-center sm:text-left">
+              © 2027 OPTIMUS '27 · KPR INSTITUTE OF ENGINEERING AND TECHNOLOGY
+            </p>
+            <button
+              onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+              className="inline-flex items-center gap-2 rounded-full border border-slate-700/80 px-5 py-2.5 font-plex text-xs font-bold tracking-widest text-slate-200 hover:border-slate-500 hover:text-white"
+            >
+              TOP <ChevronRight className="w-4 h-4 -rotate-90" />
+            </button>
+          </div>
         </div>
       </footer>
+
+      {/* ============ AUDIO PILL — bottom-right music toggle (phones use the action bar) ============ */}
+      {gate === 'gone' && (
+        <button
+          onClick={toggleSound}
+          aria-label={soundEnabled ? 'Mute music' : 'Play music'}
+          aria-pressed={soundEnabled}
+          className="hidden lg:inline-flex fixed right-6 bottom-6 z-50 items-center gap-2.5 rounded-full border border-slate-700/80 bg-slate-950/85 px-4 py-2.5 font-plex text-xs font-bold tracking-widest text-slate-200 hover:border-slate-500 hover:text-white"
+        >
+          {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4 text-slate-500" />}
+          <span className={`flex items-end gap-[3px] h-3.5 ${soundEnabled ? 'text-cyan-400' : 'text-slate-600'}`} aria-hidden="true">
+            {[0.45, 0.8, 0.6, 1].map((h, i) => (
+              <span
+                key={i}
+                className={`w-[3px] rounded-sm bg-current ${soundEnabled ? 'eq-bar' : ''}`}
+                style={{ height: `${h * 100}%`, animationDelay: `${i * 0.15}s` }}
+              />
+            ))}
+          </span>
+          {soundEnabled ? 'AUDIO' : 'MUTED'}
+        </button>
+      )}
 
       {/* ============ PHONE ACTION BAR — thumb-reach navigation (hidden from the lg breakpoint up) ============ */}
       {gate === 'gone' && (
@@ -5141,7 +5524,7 @@ export default function App() {
           style={{ paddingBottom: 'max(0.375rem, env(safe-area-inset-bottom))' }}
         >
           {([
-            { label: 'HOME', icon: <Home className="w-5 h-5" />, on: goHome, current: !active && !certPage },
+            { label: 'HOME', icon: <Home className="w-5 h-5" />, on: goHome, current: !active && !subPage },
             { label: 'LEADERS', icon: <Users className="w-5 h-5" />, on: goRoster, current: !!active },
             { label: 'PASSES', icon: <Ticket className="w-5 h-5" />, on: goPasses, current: false }
           ] as const).map((b) => (
@@ -5173,7 +5556,7 @@ export default function App() {
       )}
 
       {/* ============ CYBERTRON HUD — bottom-left tactical panels (home only, hidden on phones) ============ */}
-      {gate === 'gone' && !active && !certPage && (
+      {gate === 'gone' && !active && !subPage && (
         <div className="hud-flat fixed left-2.5 sm:left-5 bottom-2.5 sm:bottom-5 z-40 pointer-events-none hidden sm:flex flex-col gap-2 sm:gap-2.5 w-[min(60vw,270px)]">
           {/* SECTOR COORDINATES */}
           <div className="hud-panel-in relative overflow-hidden rounded-lg border border-cyan-400/30 bg-slate-950/80 px-3.5 py-2 sm:px-4 sm:py-2.5">
@@ -5205,9 +5588,9 @@ export default function App() {
       )}
 
       {/* ============ Partner logos — bottom-right (home only) ============ */}
-      {gate === 'gone' && !active && !certPage && (
+      {gate === 'gone' && !active && !subPage && (
         <div
-          className="hud-flat hud-panel-in fixed right-3 sm:right-8 bottom-2 sm:bottom-4 z-40 pointer-events-none hidden sm:flex flex-col items-center"
+          className="hud-flat hud-panel-in fixed right-3 sm:right-8 lg:right-44 bottom-2 sm:bottom-4 z-40 pointer-events-none hidden sm:flex flex-col items-center"
           style={{ perspective: '900px' }}
         >
           <div className="flex flex-col items-center" style={{ transform: 'rotateY(-14deg)', transformOrigin: 'right center' }}>
