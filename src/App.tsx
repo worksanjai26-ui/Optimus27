@@ -866,14 +866,18 @@ const ThreeHeroBackground = ({
   activeHero,
   onSelectHero,
   intro,
-  paused = false
+  paused = false,
+  onReady
 }: {
   activeHero: string | null;
   onSelectHero: (key: string) => void;
   intro: { key: string; id: number } | null;
   paused?: boolean;    // true while something opaque covers the scene
+  onReady?: () => void;   // fired once the scene is built and its first frames are drawn
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
+  const onReadyRef = useRef(onReady);
+  useEffect(() => { onReadyRef.current = onReady; }, [onReady]);
   const focusRef = useRef<string | null>(activeHero);
   const selectRef = useRef(onSelectHero);
 
@@ -2779,6 +2783,7 @@ const ThreeHeroBackground = ({
       }
       const rawDt = clock.getDelta();
       warmFrames++;
+      if (warmFrames === 3) onReadyRef.current?.();
       // Adaptive resolution: step the render scale down quickly when frames run long,
       // and back up only after sustained headroom (each change reallocates targets).
       if (!throttled && !pausedRef.current && rawDt < 0.25) {
@@ -3557,23 +3562,29 @@ export default function App() {
     const id = window.setTimeout(() => setMount3D(true), 1400);
     return () => clearTimeout(id);
   }, []);
-  // The entry insignia is fully decoded before the entry screen reveals, so the logo and the
-  // OPTIMUS '27 title rise in together instead of the logo popping in late.
+  // Loading order, so nothing janks in front of the user: the static HTML splash (logo + title,
+  // no JS needed) stays up while the insignia is decoded AND the heavy 3D scene is built behind it.
+  // Only then does the entry screen reveal, with the logo and title rising together, and ENTER
+  // finds the scene already built — no build work lands on top of an animation.
   const [logoReady, setLogoReady] = useState(false);
+  const [sceneReady, setSceneReady] = useState(false);
+  const gateReady = logoReady && sceneReady;
   useEffect(() => {
     const im = new Image();
     im.src = BASE + 'assets/logo-hd.webp';
     const ready = () => setLogoReady(true);
     im.decode().then(ready, ready);
     const id = window.setTimeout(ready, 1500);   // never hold the page on a slow network
-    return () => clearTimeout(id);
+    setMount3D(true);                            // start the 3D build now, under the splash
+    const sceneFallback = window.setTimeout(() => setSceneReady(true), 6000);   // no WebGL / hidden tab
+    return () => { clearTimeout(id); clearTimeout(sceneFallback); };
   }, []);
   useEffect(() => {
     // Drop the instant HTML splash (logo + title) once the real entry screen is ready to take over.
-    if (!logoReady) return;
+    if (!gateReady) return;
     const s = document.getElementById('splash');
     if (s) { s.style.opacity = '0'; setTimeout(() => s.remove(), 450); }
-  }, [logoReady]);
+  }, [gateReady]);
   // Becomes true as the entry screen starts to open: resumes the 3D scene and eases the site in.
   const [entered, setEntered] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<EventItem | null>(null);
@@ -3793,7 +3804,7 @@ export default function App() {
 
       {/* 3D leaders background */}
       <style dangerouslySetInnerHTML={{ __html: MOTION_CSS }} />
-      {mount3D && <ThreeHeroBackground activeHero={activeHero} onSelectHero={goHero} intro={intro} paused={!entered} />}
+      {mount3D && <ThreeHeroBackground activeHero={activeHero} onSelectHero={goHero} intro={intro} paused={!entered} onReady={() => setSceneReady(true)} />}
 
       {/* Transformation HUD — only on the first visit to each hero */}
       {intro && active && intro.key === active.key && (
@@ -3859,7 +3870,7 @@ export default function App() {
           </div>
 
           <div
-            className={`gate-content relative h-full flex flex-col items-center justify-center text-center px-5 ${logoReady ? '' : 'gate-hold'}`}
+            className={`gate-content relative h-full flex flex-col items-center justify-center text-center px-5 ${gateReady ? '' : 'gate-hold'}`}
             style={{ gap: 'clamp(12px, 2.8vh, 28px)' }}
           >
             <div className="gate-rise gate-fade inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-amber-400/50 bg-amber-400/10 text-[10px] sm:text-xs font-mono font-bold tracking-[0.3em] text-amber-200 shadow-[0_0_18px_rgba(250,204,21,0.12)]">
@@ -3906,7 +3917,6 @@ export default function App() {
                   height={240}
                   decoding="sync"
                   fetchPriority="high"
-                  onLoad={() => window.setTimeout(() => setMount3D(true), 120)}
                   draggable={false}
                   className="gate-logo relative w-full h-full object-contain"
                 />
