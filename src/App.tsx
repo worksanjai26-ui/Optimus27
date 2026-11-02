@@ -857,6 +857,32 @@ void main() {
   gl_FragColor = vec4(surf + cityGlow + uRim * fres * 1.8, 1.0);
 }`;
 
+// Rough GPU class so phones and integrated-graphics laptops get a lighter scene.
+//   low  – phones/tablets, software renderers, older integrated GPUs, ≤4 cores or ≤4 GB RAM
+//   mid  – newer integrated GPUs (Iris Xe, Radeon iGPU) and small screens
+//   high – discrete GPUs and Apple silicon
+type QualityTier = 'low' | 'mid' | 'high';
+const detectQualityTier = (width: number): QualityTier => {
+  const q = new URLSearchParams(window.location.search).get('quality');
+  if (q === 'low' || q === 'mid' || q === 'high') return q;
+  const ua = navigator.userAgent;
+  const mobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua) ||
+    (navigator.maxTouchPoints > 1 && window.matchMedia('(pointer: coarse)').matches);
+  const cores = navigator.hardwareConcurrency || 8;
+  const mem = (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 8;
+  let gpu = '';
+  try {
+    const gl = document.createElement('canvas').getContext('webgl');
+    const ext = gl?.getExtension('WEBGL_debug_renderer_info');
+    if (gl && ext) gpu = String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL));
+    gl?.getExtension('WEBGL_lose_context')?.loseContext();
+  } catch { /* no WebGL info — fall back to the other hints */ }
+  if (mobile || cores <= 4 || mem <= 4) return 'low';
+  if (/SwiftShader|llvmpipe|Software|Basic Render|Mali|Adreno|PowerVR|Intel.*(HD|UHD)/i.test(gpu)) return 'low';
+  if (width < 1024 || /Intel|Radeon(\(TM\))? Graphics|Vega/i.test(gpu)) return 'mid';
+  return 'high';
+};
+
 const ThreeHeroBackground = ({
   activeHero,
   onSelectHero,
@@ -891,7 +917,10 @@ const ThreeHeroBackground = ({
       h: mount.clientHeight || window.innerHeight || 1
     });
     const size0 = getSize();
-    const lowPower = size0.w < 768 || (navigator.hardwareConcurrency || 8) <= 4;
+    const tier = detectQualityTier(size0.w);
+    const lowPower = tier !== 'high';
+    // Lite: no post-processing, shadows or HDR download; renders straight to the canvas.
+    const lite = tier === 'low';
 
     /* ---------- renderer / camera ---------- */
     const scene = new THREE.Scene();
@@ -902,14 +931,16 @@ const ThreeHeroBackground = ({
 
     // Everything is drawn through the composer's multisampled target, so the canvas
     // itself needs no MSAA. Render scale adapts to the frame rate (see animate()).
-    const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
-    const DPR_MAX = Math.min(window.devicePixelRatio, 1.25);
+    // In lite mode there is no composer, so the canvas does its own (cheap) MSAA.
+    const renderer = new THREE.WebGLRenderer({ antialias: lite, powerPreference: 'high-performance' });
+    const DPR_MAX = Math.min(window.devicePixelRatio, tier === 'high' ? 1.25 : 1);
+    const DPR_MIN = lite ? 0.5 : 0.7;
     let dpr = DPR_MAX;
     renderer.setSize(size0.w, size0.h);
     renderer.setPixelRatio(dpr);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 0.62;
-    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.enabled = !lite;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     // The mirror floor re-renders the scene; without this the shadow map is redrawn
     // for that pass too. animate() flags one shadow update per frame instead.
@@ -957,8 +988,9 @@ const ThreeHeroBackground = ({
     });
     // Real photographed night-city lighting (Poly Haven "Shanghai Bund", CC0); the studio
     // environment above stays as the fallback until it loads.
+    // The HDR is a 6 MB download plus a costly PMREM bake — lite devices keep the studio env.
     let envDisposed = false;
-    new RGBELoader().load('/env/shanghai_bund_2k.hdr', (hdr) => {
+    if (!lite) new RGBELoader().load('/env/shanghai_bund_2k.hdr', (hdr) => {
       if (envDisposed) {
         hdr.dispose();
         return;
@@ -2424,7 +2456,7 @@ const ThreeHeroBackground = ({
     });
 
     /* ---------- drifting embers & dust ---------- */
-    const EMBERS = lowPower ? 260 : 520;
+    const EMBERS = lite ? 120 : lowPower ? 260 : 520;
     const eGeo = new THREE.BufferGeometry();
     const ePos = new Float32Array(EMBERS * 3);
     const eCol = new Float32Array(EMBERS * 3);
@@ -2637,11 +2669,13 @@ const ThreeHeroBackground = ({
     /* ---------- post-processing: MSAA scene -> sanitize -> bloom -> tone-mapped output ---------- */
     // Post-processing bypasses the canvas' built-in antialiasing, so render into a
     // multisampled target to keep edges clean.
+    // Lite mode skips the whole chain: four full-screen passes plus bloom's blur
+    // pyramid are what weak GPUs choke on.
     const samples = lowPower ? 0 : Math.min(4, renderer.capabilities.maxSamples);
-    const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(size0.w, size0.h, { type: THREE.HalfFloatType, samples }));
-    composer.setSize(size0.w, size0.h);
-    composer.setPixelRatio(dpr);
-    composer.addPass(new RenderPass(scene, camera));
+    const composer = lite ? null : new EffectComposer(renderer, new THREE.WebGLRenderTarget(size0.w, size0.h, { type: THREE.HalfFloatType, samples }));
+    composer?.setSize(size0.w, size0.h);
+    composer?.setPixelRatio(dpr);
+    composer?.addPass(new RenderPass(scene, camera));
     // Drop NaN pixels and clamp over-bright speculars before bloom, so one bad
     // pixel can never be blurred into a flickering black block.
     const sanitize = new ShaderPass({
@@ -2657,11 +2691,13 @@ const ThreeHeroBackground = ({
           gl_FragColor = vec4(clamp(c, 0.0, 8.0), 1.0);
         }`
     });
-    composer.addPass(sanitize);
-    const bloom = new UnrealBloomPass(new THREE.Vector2(size0.w, size0.h), 0.22, 0.4, 0.95);
-    composer.addPass(bloom);
+    const bloom = composer ? new UnrealBloomPass(new THREE.Vector2(size0.w, size0.h), 0.22, 0.4, 0.95) : null;
     const outputPass = new OutputPass();
-    composer.addPass(outputPass);
+    if (composer && bloom) {
+      composer.addPass(sanitize);
+      composer.addPass(bloom);
+      composer.addPass(outputPass);
+    }
 
     /* ---------- interaction ---------- */
     const mouse = { x: 0, y: 0 };
@@ -2711,8 +2747,8 @@ const ThreeHeroBackground = ({
       camera.aspect = s.w / s.h;
       camera.updateProjectionMatrix();
       renderer.setSize(s.w, s.h);
-      composer.setSize(s.w, s.h);
-      bloom.setSize(s.w, s.h);
+      composer?.setSize(s.w, s.h);
+      bloom?.setSize(s.w, s.h);
       if (reflector) reflector.getRenderTarget().setSize(Math.floor(s.w * 0.5), Math.floor(s.h * 0.5));
     };
     window.addEventListener('resize', onResize);
@@ -2731,7 +2767,7 @@ const ThreeHeroBackground = ({
     let perfAcc = 0, perfFrames = 0, headroomWindows = 0;
     const applyDpr = () => {
       renderer.setPixelRatio(dpr);
-      composer.setPixelRatio(dpr);
+      composer?.setPixelRatio(dpr);
       onResize();
     };
 
@@ -2758,8 +2794,8 @@ const ThreeHeroBackground = ({
         if (perfAcc > 1.2) {
           const avg = perfAcc / perfFrames;
           perfAcc = perfFrames = 0;
-          if (avg > 1 / 45 && dpr > 0.7) {
-            dpr = Math.max(0.7, +(dpr - 0.15).toFixed(2));
+          if (avg > 1 / 45 && dpr > DPR_MIN) {
+            dpr = Math.max(DPR_MIN, +(dpr - 0.15).toFixed(2));
             headroomWindows = 0;
             applyDpr();
           } else if (avg < 1 / 57 && dpr < DPR_MAX) {
@@ -3034,7 +3070,7 @@ const ThreeHeroBackground = ({
         if (sparkT > 1.4) sparkT = -1;
       }
       flash.intensity *= 0.9;
-      bloom.strength = 0.55 + Math.min(flash.intensity / 900, 1) * 0.9;
+      if (bloom) bloom.strength = 0.55 + Math.min(flash.intensity / 900, 1) * 0.9;
 
       // Sky life: drifting cloud banks and mist, crossing air traffic with strobes.
       if (!reduceMotion) {
@@ -3089,8 +3125,12 @@ const ThreeHeroBackground = ({
         eGeo.attributes.position.needsUpdate = true;
       }
 
-      renderer.shadowMap.needsUpdate = true;
-      composer.render();
+      if (composer) {
+        renderer.shadowMap.needsUpdate = true;
+        composer.render();
+      } else {
+        renderer.render(scene, camera);
+      }
     };
     animate();
 
@@ -3116,8 +3156,8 @@ const ThreeHeroBackground = ({
         }
       });
       textures.forEach((t) => t.dispose());
-      composer.dispose();
-      bloom.dispose();
+      composer?.dispose();
+      bloom?.dispose();
       outputPass.dispose();
       sanitize.dispose();
       envDisposed = true;
