@@ -3520,6 +3520,10 @@ function Countdown() {
 // Optimus IDs: letters, digits and hyphens (e.g. OPT27-0142). There is no server list of issued IDs yet,
 // so only the format is checked; swap isValidOptimusId for a real lookup once IDs are issued.
 const OPTIMUS_ID_RE = /^[A-Z0-9][A-Z0-9-]{3,19}$/;
+// Certificates unlock once the fest is over (end of Feb 5, 2027). Until then the template stays
+// in the code but GET CERTIFICATE only tells visitors to come back after the event.
+const CERTIFICATES_OPEN = new Date('2027-02-06T00:00:00');
+const certificatesOpen = () => Date.now() >= CERTIFICATES_OPEN.getTime();
 const isValidOptimusId = (id: string) => OPTIMUS_ID_RE.test(id);
 
 const loadImage = (src: string) => new Promise<HTMLImageElement | null>((res) => {
@@ -3674,10 +3678,15 @@ function CertificatePage({ onHome }: { onHome: () => void }) {
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [cert, setCert] = useState<{ url: string; file: string; name: string } | null>(null);
+  const [notYet, setNotYet] = useState(false);
   useEffect(() => () => { if (cert) URL.revokeObjectURL(cert.url); }, [cert]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!certificatesOpen()) {
+      setNotYet(true);
+      return;
+    }
     const id = optimusId.trim().toUpperCase();
     const nm = name.trim().replace(/\s+/g, ' ');
     if (!isValidOptimusId(id)) {
@@ -3756,6 +3765,14 @@ function CertificatePage({ onHome }: { onHome: () => void }) {
         >
           <Award className="w-4 h-4" /> {busy ? 'CREATING CERTIFICATE…' : 'GET CERTIFICATE'}
         </button>
+        {notYet && (
+          <div role="status" className="rounded-2xl border border-amber-500/40 bg-amber-500/10 px-5 py-4 text-center space-y-1.5">
+            <p className="text-sm font-black tracking-widest text-amber-300">CERTIFICATES OPEN AFTER THE EVENT</p>
+            <p className="text-sm text-slate-300">
+              Participate in OPTIMUS '27 on Feb 4 – 5, 2027, then come back here after the fest to get your certificate.
+            </p>
+          </div>
+        )}
       </form>
 
       {cert && (
