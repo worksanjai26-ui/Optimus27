@@ -1,6 +1,7 @@
 import React, { Suspense, lazy } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
+import './index.css';
 
 // The admin panel is not linked from the site; open /admin (or /#admin on hosts without SPA rewrites).
 const AdminPage = lazy(() => import('./AdminPage'));

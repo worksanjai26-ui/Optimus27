@@ -858,11 +858,14 @@ void main() {
 }`;
 
 // Rough GPU class so phones and integrated-graphics laptops get a lighter scene.
-//   low  – phones/tablets, software renderers, older integrated GPUs, ≤4 cores or ≤4 GB RAM
-//   mid  – newer integrated GPUs (Iris Xe, Radeon iGPU) and small screens
+//   low  – phones/tablets, software renderers, Intel integrated GPUs, ≤4 cores or ≤4 GB RAM
+//   mid  – AMD integrated GPUs and small screens
 //   high – discrete GPUs and Apple silicon
 type QualityTier = 'low' | 'mid' | 'high';
-const detectQualityTier = (width: number): QualityTier => {
+let cachedTier: QualityTier | null = null;
+const detectQualityTier = (width: number = window.innerWidth): QualityTier =>
+  (cachedTier ??= probeQualityTier(width));
+const probeQualityTier = (width: number): QualityTier => {
   const q = new URLSearchParams(window.location.search).get('quality');
   if (q === 'low' || q === 'mid' || q === 'high') return q;
   const ua = navigator.userAgent;
@@ -878,10 +881,14 @@ const detectQualityTier = (width: number): QualityTier => {
     gl?.getExtension('WEBGL_lose_context')?.loseContext();
   } catch { /* no WebGL info — fall back to the other hints */ }
   if (mobile || cores <= 4 || mem <= 4) return 'low';
-  if (/SwiftShader|llvmpipe|Software|Basic Render|Mali|Adreno|PowerVR|Intel.*(HD|UHD)/i.test(gpu)) return 'low';
-  if (width < 1024 || /Intel|Radeon(\(TM\))? Graphics|Vega/i.test(gpu)) return 'mid';
+  // Every Intel integrated GPU (HD, UHD, Iris, Xe) goes to lite: measured ~24 fps with bloom vs a steady cap without.
+  if (/SwiftShader|llvmpipe|Software|Basic Render|Mali|Adreno|PowerVR|Intel(?!.*Arc)/i.test(gpu)) return 'low';
+  if (width < 1024 || /Radeon(\(TM\))? Graphics|Vega/i.test(gpu)) return 'mid';
   return 'high';
 };
+
+// Lets the stylesheet drop paint-heavy decoration (filters, blurs, particles) on weaker devices.
+if (typeof document !== 'undefined') document.documentElement.classList.add(`tier-${detectQualityTier()}`);
 
 const ThreeHeroBackground = ({
   activeHero,
@@ -3263,13 +3270,17 @@ const MOTION_CSS = `
   filter: drop-shadow(0 0 1px rgba(226,232,240,.55)) drop-shadow(0 0 14px rgba(148,197,255,.25)) drop-shadow(0 22px 30px rgba(0,0,0,.85)) brightness(1.12) contrast(1.08);
 }
 .gate-sheen {
-  background: linear-gradient(105deg, transparent 38%, rgba(255,255,255,.62) 50%, transparent 62%);
-  background-size: 260% 100%; background-repeat: no-repeat;
+  overflow: hidden;
   -webkit-mask: url(/assets/logo-hd.webp) center / contain no-repeat;
           mask: url(/assets/logo-hd.webp) center / contain no-repeat;
-  animation: gateSheen 6s ease-in-out 1s infinite;
 }
-@keyframes gateSheen { 0% { background-position: 130% 0; } 28%, 100% { background-position: -30% 0; } }
+/* The light band slides with transform (compositor only) instead of repainting background-position. */
+.gate-sheen::before {
+  content: ''; position: absolute; top: 0; bottom: 0; left: -100%; width: 100%;
+  background: linear-gradient(105deg, transparent 20%, rgba(255,255,255,.62) 50%, transparent 80%);
+  animation: gateSheen 6s ease-in-out 1s infinite; will-change: transform;
+}
+@keyframes gateSheen { 0% { transform: translateX(0); } 28%, 100% { transform: translateX(200%); } }
 
 /* Brand type: brushed-silver OPTIMUS, Transformers-yellow '27 (shared with the home hero). */
 .metal-text {
@@ -3348,7 +3359,7 @@ const MOTION_CSS = `
 .prize-in .prize-sweep { animation: prizeSweep 1.1s ease-out .75s 1 both; }
 @keyframes prizeSweep { 0% { transform: translateX(-80px); opacity: 0; } 30% { opacity: .85; } 100% { transform: translateX(220px); opacity: 0; } }
 /* pass cards + stat tiles: lift, glow and a sheen on hover */
-.lift-card { transition: transform .25s cubic-bezier(.2,.8,.2,1), box-shadow .25s ease, border-color .25s ease; will-change: transform; }
+.lift-card { transition: transform .25s cubic-bezier(.2,.8,.2,1), box-shadow .25s ease, border-color .25s ease; }
 .lift-card:hover { transform: translateY(-8px); }
 .lift-card::after {
   content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0;
@@ -3376,6 +3387,12 @@ const MOTION_CSS = `
 .prize-in .prize-heading-sweep { animation: prizeHeadSweep 1.3s ease-out .8s 1 both; }
 @keyframes prizeHeadSweep { 0% { background-position: 150% 0; opacity: 1; } 100% { background-position: -50% 0; opacity: 0; } }
 
+/* Weaker GPUs: drop effects that force full repaints while things animate over the 3D canvas. */
+.tier-low .prize-trophy, .tier-mid .prize-trophy { filter: none; }
+.tier-low .blur-2xl, .tier-low .blur-3xl, .tier-mid .blur-2xl, .tier-mid .blur-3xl { display: none; }
+.tier-low .prize-mote, .tier-low .gate-mote { display: none; }
+.tier-low .lift-card::after { display: none; }
+
 @media (prefers-reduced-motion: reduce) {
   .hero-in, .hud-in, .hud-bar, .hud-flash, .hud-panel-in, .hud-scan,
   .gate-grid, .gate-beam, .gate-ring, .gate-ring-rev, .gate-sheen,
@@ -3389,6 +3406,55 @@ const MOTION_CSS = `
   .gate-emblem, .gate-emblem:hover, .gate-emblem:active { transform: none; }
 }
 `;
+
+/* ===================== COUNTDOWN ===================== */
+// Its own component so the per-second tick re-renders only these digits, not the whole page.
+const computeLeft = () => {
+  const diff = EVENT_DATE.getTime() - Date.now();
+  if (diff <= 0) return { days: 0, hours: 0, minutes: 0, seconds: 0 };
+  return {
+    days: Math.floor(diff / 86400000),
+    hours: Math.floor(diff / 3600000) % 24,
+    minutes: Math.floor(diff / 60000) % 60,
+    seconds: Math.floor(diff / 1000) % 60
+  };
+};
+
+function Countdown() {
+  const [timeLeft, setTimeLeft] = useState(computeLeft);
+  useEffect(() => {
+    const id = setInterval(() => setTimeLeft(computeLeft()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  // Plain, widely tracked white figures separated by colons, labels underneath.
+  return (
+    <div className="pt-4 mx-auto pointer-events-auto flex items-start justify-center gap-3 sm:gap-6 text-white" style={{ textShadow: '0 2px 18px rgba(0,0,0,.65)' }}>
+      {[
+        { label: 'DAYS', val: timeLeft.days },
+        { label: 'HOURS', val: timeLeft.hours },
+        { label: 'MINUTES', val: timeLeft.minutes },
+        { label: 'SECONDS', val: timeLeft.seconds }
+      ].map((item, i) => (
+        <React.Fragment key={item.label}>
+          {i > 0 && (
+            <span className="font-sans font-semibold leading-none text-slate-300/80" style={{ fontSize: 'clamp(1.75rem, 5.5vw, 3.25rem)' }}>:</span>
+          )}
+          <div className="flex flex-col items-center">
+            <span
+              className="font-sans font-semibold leading-none tabular-nums"
+              style={{ fontSize: 'clamp(1.75rem, 5.5vw, 3.25rem)', letterSpacing: '0.28em', marginRight: '-0.28em' }}
+            >
+              {String(item.val).padStart(2, '0')}
+            </span>
+            <span className="mt-3 font-sans font-bold text-[9px] sm:text-xs text-slate-200" style={{ letterSpacing: '0.3em', marginRight: '-0.3em' }}>
+              {item.label}
+            </span>
+          </div>
+        </React.Fragment>
+      ))}
+    </div>
+  );
+}
 
 /* ===================== PRIZE POOL SECTION ===================== */
 // Deterministic golden motes so React re-renders don't reshuffle them.
@@ -3609,23 +3675,6 @@ export default function App() {
   const introPlaying = !!intro && !!active && intro.key === active.key;
   const introDelay = (extra: number) => `${(introPlaying ? 3.6 : 0.05) + extra}s`;
   const t = THEME[active ? active.theme : 'amber'];
-
-  /* ---- live countdown ---- */
-  const computeLeft = () => {
-    const diff = EVENT_DATE.getTime() - Date.now();
-    if (diff <= 0) return { days: 0, hours: 0, minutes: 0, seconds: 0 };
-    return {
-      days: Math.floor(diff / 86400000),
-      hours: Math.floor(diff / 3600000) % 24,
-      minutes: Math.floor(diff / 60000) % 60,
-      seconds: Math.floor(diff / 1000) % 60
-    };
-  };
-  const [timeLeft, setTimeLeft] = useState(computeLeft());
-  useEffect(() => {
-    const id = setInterval(() => setTimeLeft(computeLeft()), 1000);
-    return () => clearInterval(id);
-  }, []);
 
   /* ---- navigation ---- */
   const goHero = useCallback((key: string) => {
@@ -4067,32 +4116,7 @@ export default function App() {
                 </p>
 
                 {/* Countdown */}
-                {/* Plain, widely tracked white figures separated by colons, labels underneath. */}
-                <div className="pt-4 mx-auto pointer-events-auto flex items-start justify-center gap-3 sm:gap-6 text-white" style={{ textShadow: '0 2px 18px rgba(0,0,0,.65)' }}>
-                  {[
-                    { label: 'DAYS', val: timeLeft.days },
-                    { label: 'HOURS', val: timeLeft.hours },
-                    { label: 'MINUTES', val: timeLeft.minutes },
-                    { label: 'SECONDS', val: timeLeft.seconds }
-                  ].map((item, i) => (
-                    <React.Fragment key={item.label}>
-                      {i > 0 && (
-                        <span className="font-sans font-semibold leading-none text-slate-300/80" style={{ fontSize: 'clamp(1.75rem, 5.5vw, 3.25rem)' }}>:</span>
-                      )}
-                      <div className="flex flex-col items-center">
-                        <span
-                          className="font-sans font-semibold leading-none tabular-nums"
-                          style={{ fontSize: 'clamp(1.75rem, 5.5vw, 3.25rem)', letterSpacing: '0.28em', marginRight: '-0.28em' }}
-                        >
-                          {String(item.val).padStart(2, '0')}
-                        </span>
-                        <span className="mt-3 font-sans font-bold text-[9px] sm:text-xs text-slate-200" style={{ letterSpacing: '0.3em', marginRight: '-0.3em' }}>
-                          {item.label}
-                        </span>
-                      </div>
-                    </React.Fragment>
-                  ))}
-                </div>
+                <Countdown />
 
                 <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-2 pointer-events-auto">
                   <button
