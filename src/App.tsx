@@ -30,9 +30,14 @@ import {
   QrCode,
   Radio,
   Ticket,
-  Megaphone
+  Megaphone,
+  Home,
+  MapPin,
+  CalendarPlus
 } from 'lucide-react';
 import { listOverrides, listAnnouncements, addRegistration, recordVisit, Announcement, Overrides } from './adminData';
+// Public-folder files are served under the Vite base (the repo sub-path on GitHub Pages, '/' in dev).
+const BASE =import.meta.env.BASE_URL;
 
 /* ------------------------------------------------------------------ *
  *  OPTIMUS '27  —  National Level Techno Fest
@@ -54,12 +59,12 @@ const EVENT_DATE = new Date('2027-02-04T09:00:00');
 // vehicle shells automatically; while a file is missing the code-built one is used.
 // length: bumper-to-bumper size on stage. yaw: extra turn (radians) if a model faces backwards.
 const VEHICLE_MODELS: Record<string, { src: string; length: number; yaw?: number }> = {
-  bumblebee: { src: '/models/bumblebee-car.glb', length: 5.9 },
-  megatron: { src: '/models/megatron-car.glb', length: 6.9 },
-  ratchet: { src: '/models/ratchet-car.glb', length: 6.6 }
+  bumblebee: { src: BASE + 'models/bumblebee-car.glb', length: 5.9 },
+  megatron: { src: BASE + 'models/megatron-car.glb', length: 6.9 },
+  ratchet: { src: BASE + 'models/ratchet-car.glb', length: 6.6 }
 };
 
-const MUSIC_SRC = '/music/theme.mp3';
+const MUSIC_SRC = BASE + 'music/theme.mp3';
 // The theme file is mastered very quietly (about -36 dB RMS, peaks near 8%), so it runs through a
 // Web Audio gain stage; MUSIC_VOLUME / MUSIC_DUCKED are the fader on top of that boost.
 const MUSIC_GAIN = 6;
@@ -68,7 +73,7 @@ const MUSIC_DUCKED = 0.35;
 // The transformation clip is cropped at play time to its busiest stretch (from..to, seconds into
 // the file) and starts `delay` seconds after the intro begins, so its big hit (~2.4s into the
 // file) lands on the 3D lock-in impact at INTRO_LOCK = 3.5s.
-const TRANSFORM_SFX = { src: '/sfx/transform.mp3', from: 0.6, to: 3.6, delay: 1.8, volume: 0.95 };
+const TRANSFORM_SFX = { src: BASE + 'sfx/transform.mp3', from: 0.6, to: 3.6, delay: 1.8, volume: 0.95 };
 
 type VehicleKind = 'car' | 'truck' | 'tank' | 'ambulance';
 
@@ -895,14 +900,18 @@ const ThreeHeroBackground = ({
   activeHero,
   onSelectHero,
   intro,
-  paused = false
+  paused = false,
+  onReady
 }: {
   activeHero: string | null;
   onSelectHero: (key: string) => void;
   intro: { key: string; id: number } | null;
   paused?: boolean;    // true while something opaque covers the scene
+  onReady?: () => void;   // fired once the scene is built and its first frames are drawn
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
+  const onReadyRef = useRef(onReady);
+  useEffect(() => { onReadyRef.current = onReady; }, [onReady]);
   const focusRef = useRef<string | null>(activeHero);
   const selectRef = useRef(onSelectHero);
 
@@ -929,6 +938,10 @@ const ThreeHeroBackground = ({
     const lowPower = tier !== 'high';
     // Lite: no post-processing, shadows or HDR download; renders straight to the canvas.
     const lite = tier === 'low';
+    const isPhone = size0.w < 768;
+    // The wet mirror floor re-renders the whole scene, so only the high tier gets it.
+    const useMirror = !lowPower;
+    const reflectScale = isPhone ? 0.35 : 0.5;
 
     /* ---------- renderer / camera ---------- */
     const scene = new THREE.Scene();
@@ -941,8 +954,9 @@ const ThreeHeroBackground = ({
     // itself needs no MSAA. Render scale adapts to the frame rate (see animate()).
     // In lite mode there is no composer, so the canvas does its own (cheap) MSAA.
     const renderer = new THREE.WebGLRenderer({ antialias: lite, powerPreference: 'high-performance' });
-    const DPR_MAX = Math.min(window.devicePixelRatio, tier === 'high' ? 1.25 : 1);
+    const DPR_MAX = Math.min(window.devicePixelRatio, tier === 'high' && !isPhone ? 1.25 : 1);
     const DPR_MIN = lite ? 0.5 : 0.7;
+    let dprCap = DPR_MAX;   // lowered once effects have been shed, so the scale never creeps back up into lag
     let dpr = DPR_MAX;
     renderer.setSize(size0.w, size0.h);
     renderer.setPixelRatio(dpr);
@@ -998,7 +1012,7 @@ const ThreeHeroBackground = ({
     // environment above stays as the fallback until it loads.
     // The HDR is a 6 MB download plus a costly PMREM bake — lite devices keep the studio env.
     let envDisposed = false;
-    if (!lite) new RGBELoader().load('/env/shanghai_bund_2k.hdr', (hdr) => {
+    if (!lite) new RGBELoader().load(BASE + 'env/shanghai_bund_2k.hdr', (hdr) => {
       if (envDisposed) {
         hdr.dispose();
         return;
@@ -1057,11 +1071,11 @@ const ThreeHeroBackground = ({
 
     /* ---------- wet reflective floor ---------- */
     let reflector: Reflector | null = null;
-    if (!lowPower) {
+    if (useMirror) {
       reflector = new Reflector(new THREE.PlaneGeometry(220, 220), {
         clipBias: 0.003,
-        textureWidth: Math.floor(size0.w * 0.5),
-        textureHeight: Math.floor(size0.h * 0.5),
+        textureWidth: Math.floor(size0.w * reflectScale),
+        textureHeight: Math.floor(size0.h * reflectScale),
         color: 0x1e2126
       });
       reflector.rotation.x = -Math.PI / 2;
@@ -1342,7 +1356,7 @@ const ThreeHeroBackground = ({
       infoCv.t.needsUpdate = true;
     };
     const sponsorCv = liveCanvas(1024, 520);
-    const logoImgs: HTMLImageElement[] = ['/assets/acmw.png', '/assets/nexora.png'].map((src) => {
+    const logoImgs: HTMLImageElement[] = [BASE + 'assets/acmw.png', BASE + 'assets/nexora.png'].map((src) => {
       const im = new Image();
       im.src = src;
       return im;
@@ -2679,7 +2693,7 @@ const ThreeHeroBackground = ({
     // multisampled target to keep edges clean.
     // Lite mode skips the whole chain: four full-screen passes plus bloom's blur
     // pyramid are what weak GPUs choke on.
-    const samples = lowPower ? 0 : Math.min(4, renderer.capabilities.maxSamples);
+    const samples = lowPower ? 0 : Math.min(isPhone ? 2 : 4, renderer.capabilities.maxSamples);
     const composer = lite ? null : new EffectComposer(renderer, new THREE.WebGLRenderTarget(size0.w, size0.h, { type: THREE.HalfFloatType, samples }));
     composer?.setSize(size0.w, size0.h);
     composer?.setPixelRatio(dpr);
@@ -2757,7 +2771,7 @@ const ThreeHeroBackground = ({
       renderer.setSize(s.w, s.h);
       composer?.setSize(s.w, s.h);
       bloom?.setSize(s.w, s.h);
-      if (reflector) reflector.getRenderTarget().setSize(Math.floor(s.w * 0.5), Math.floor(s.h * 0.5));
+      if (reflector) reflector.getRenderTarget().setSize(Math.floor(s.w * reflectScale), Math.floor(s.h * reflectScale));
     };
     window.addEventListener('resize', onResize);
     // Re-sync when the pane goes from hidden (0x0) to visible.
@@ -2793,6 +2807,9 @@ const ThreeHeroBackground = ({
       cl.remove('tier-high', 'tier-mid');
       cl.add('tier-low');
     };
+    // On portrait screens the roster is squeezed toward the middle so all four leaders stay in frame
+    // (1 on landscape / desktop, down to 0.45 on a tall phone).
+    const homeSpread = () => THREE.MathUtils.clamp(camera.aspect * 1.0, 0.45, 1);
     const applyDpr = () => {
       renderer.setPixelRatio(dpr);
       composer?.setPixelRatio(dpr);
@@ -2814,6 +2831,7 @@ const ThreeHeroBackground = ({
       }
       const rawDt = clock.getDelta();
       warmFrames++;
+      if (warmFrames === 3) onReadyRef.current?.();
       // Adaptive resolution: step the render scale down quickly when frames run long,
       // and back up only after sustained headroom (each change reallocates targets).
       // While scrolled down only every other frame is drawn, so halve the gap to compare like for like.
@@ -2835,9 +2853,13 @@ const ThreeHeroBackground = ({
             dpr = Math.max(DPR_MIN, +(dpr - 0.15).toFixed(2));
             headroomWindows = 0;
             applyDpr();
-          } else if (avg < 1 / 57 && dpr < DPR_MAX) {
+          } else if (avg > 1 / 40) {
+            // Effects already off and at the lowest render scale: never let the scale creep back up into lag.
+            dprCap = dpr;
+            headroomWindows = 0;
+          } else if (avg < 1 / 57 && dpr < dprCap) {
             if (++headroomWindows >= 4) {
-              dpr = Math.min(DPR_MAX, +(dpr + 0.1).toFixed(2));
+              dpr = Math.min(dprCap, +(dpr + 0.1).toFixed(2));
               headroomWindows = 0;
               applyDpr();
             }
@@ -2925,7 +2947,7 @@ const ThreeHeroBackground = ({
         // Inspected hero walks to centre stage on the floor; the rest hold their roster marks.
         const g = rec.group;
         const ease = focused ? 0.1 : 0.14;
-        g.position.x += ((focused ? 0 : hero.layout.x) - g.position.x) * ease;
+        g.position.x += ((focused ? 0 : hero.layout.x * homeSpread()) - g.position.x) * ease;
         g.position.z += ((focused ? 0 : hero.layout.z) - g.position.z) * ease;
         g.position.y += ((focused ? GROUND_Y : rec.baseY) - g.position.y) * ease;
 
@@ -3043,9 +3065,11 @@ const ThreeHeroBackground = ({
           lookTarget.set(0, -1.2 + 3.1 * k, 0);
         }
       } else if (!focus) {
-        // Sideways drift is kept small so the gate ring stays centred behind the hero wordmark.
-        camTarget.set(mouse.x * 0.25 + Math.sin(time * 0.08) * 0.1, 2.6 + mouse.y * 0.5, 18);
-        lookTarget.set(0, 1.7, -1);
+        // Sideways drift is kept small so the gate ring stays centred behind the hero wordmark;
+        // tall phone screens only see a narrow slice of the stage, so pull the camera back (see homeSpread).
+        camTarget.set(mouse.x * 0.25 + Math.sin(time * 0.08) * 0.1, 2.6 + mouse.y * 0.5, 18 + (1 - homeSpread()) * 20);
+        // ...and aim higher so the roster sits lower, clear of the title and countdown card.
+        lookTarget.set(0, 1.7 + (1 - homeSpread()) * 5, -1);
       } else {
         // Fixed centre-stage framing for whichever hero is inspected.
         camTarget.set(mouse.x * 0.8, 2.4 + mouse.y * 0.4, 14);
@@ -3301,8 +3325,8 @@ const MOTION_CSS = `
 }
 .gate-sheen {
   overflow: hidden;
-  -webkit-mask: url(/assets/logo-hd.webp) center / contain no-repeat;
-          mask: url(/assets/logo-hd.webp) center / contain no-repeat;
+  -webkit-mask: url(${BASE}assets/logo-hd.webp) center / contain no-repeat;
+          mask: url(${BASE}assets/logo-hd.webp) center / contain no-repeat;
 }
 /* The light band slides with transform (compositor only) instead of repainting background-position. */
 .gate-sheen::before {
@@ -3337,6 +3361,8 @@ const MOTION_CSS = `
 .gate-rise { animation: gateRise .8s cubic-bezier(.2,.8,.2,1) both; }
 @keyframes emblemIn { from { opacity: 0; transform: scale(.9); filter: brightness(1.5) blur(4px); } to { opacity: 1; transform: none; filter: none; } }
 .emblem-in { animation: emblemIn .6s cubic-bezier(.2,.8,.2,1) both; }
+/* Hold every reveal at its first frame until the insignia is decoded, so logo and title start together. */
+.gate-hold .gate-rise, .gate-hold .emblem-in { animation-play-state: paused; }
 
 /* ENTER sequence (~2.3s, transform + opacity only so it stays on the compositor):
    text fades; the insignia flies to centre and grows broad; it dissolves into a large
@@ -3659,11 +3685,29 @@ export default function App() {
     const id = window.setTimeout(() => setMount3D(true), 1400);
     return () => clearTimeout(id);
   }, []);
+  // Loading order, so nothing janks in front of the user: the static HTML splash (logo + title,
+  // no JS needed) stays up while the insignia is decoded AND the heavy 3D scene is built behind it.
+  // Only then does the entry screen reveal, with the logo and title rising together, and ENTER
+  // finds the scene already built — no build work lands on top of an animation.
+  const [logoReady, setLogoReady] = useState(false);
+  const [sceneReady, setSceneReady] = useState(false);
+  const gateReady = logoReady && sceneReady;
   useEffect(() => {
-    // Drop the instant HTML splash as soon as React has rendered the real entry screen.
+    const im = new Image();
+    im.src = BASE + 'assets/logo-hd.webp';
+    const ready = () => setLogoReady(true);
+    im.decode().then(ready, ready);
+    const id = window.setTimeout(ready, 1500);   // never hold the page on a slow network
+    setMount3D(true);                            // start the 3D build now, under the splash
+    const sceneFallback = window.setTimeout(() => setSceneReady(true), 6000);   // no WebGL / hidden tab
+    return () => { clearTimeout(id); clearTimeout(sceneFallback); };
+  }, []);
+  useEffect(() => {
+    // Drop the instant HTML splash (logo + title) once the real entry screen is ready to take over.
+    if (!gateReady) return;
     const s = document.getElementById('splash');
     if (s) { s.style.opacity = '0'; setTimeout(() => s.remove(), 450); }
-  }, []);
+  }, [gateReady]);
   // Becomes true as the entry screen starts to open: resumes the 3D scene and eases the site in.
   const [entered, setEntered] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<EventItem | null>(null);
@@ -3729,6 +3773,13 @@ export default function App() {
     setTimeout(() => document.getElementById('passes')?.scrollIntoView({ behavior: 'smooth' }), 80);
   }, []);
 
+  // Leaders list sits on the home page too, so leave any hero page first (phone action bar).
+  const goRoster = useCallback(() => {
+    setActiveHero(null);
+    setMobileMenuOpen(false);
+    setTimeout(() => document.getElementById('roster')?.scrollIntoView({ behavior: 'smooth' }), 80);
+  }, []);
+
   const toggleSound = () => {
     const next = !soundEnabled;
     setSoundEnabled(next);
@@ -3743,6 +3794,7 @@ export default function App() {
   const enterSite = useCallback(() => {
     if (enteringRef.current) return;
     enteringRef.current = true;
+    setMount3D(true);   // tapped before the scene was built: start it now, under the ENTER hold
     audioFX.setMuted(false);
     setSoundEnabled(true);
     audioFX.start();
@@ -3858,7 +3910,7 @@ export default function App() {
 
       {/* 3D leaders background */}
       <style dangerouslySetInnerHTML={{ __html: MOTION_CSS }} />
-      {mount3D && <ThreeHeroBackground activeHero={activeHero} onSelectHero={goHero} intro={intro} paused={!entered} />}
+      {mount3D && <ThreeHeroBackground activeHero={activeHero} onSelectHero={goHero} intro={intro} paused={!entered} onReady={() => setSceneReady(true)} />}
 
       {/* Transformation HUD — only on the first visit to each hero */}
       {intro && active && intro.key === active.key && (
@@ -3924,7 +3976,7 @@ export default function App() {
           </div>
 
           <div
-            className="gate-content relative h-full flex flex-col items-center justify-center text-center px-5"
+            className={`gate-content relative h-full flex flex-col items-center justify-center text-center px-5 ${gateReady ? '' : 'gate-hold'}`}
             style={{ gap: 'clamp(12px, 2.8vh, 28px)' }}
           >
             <div className="gate-rise gate-fade inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-amber-400/50 bg-amber-400/10 text-[10px] sm:text-xs font-mono font-bold tracking-[0.3em] text-amber-200 shadow-[0_0_18px_rgba(250,204,21,0.12)]">
@@ -3933,7 +3985,7 @@ export default function App() {
 
             <h1
               className="gate-rise gate-fade font-black uppercase leading-[0.9] tracking-tight whitespace-nowrap"
-              style={{ fontSize: 'clamp(2rem, min(9vw, 12vh), 8rem)', animationDelay: '.15s' }}
+              style={{ fontSize: 'clamp(2rem, min(9vw, 12vh), 8rem)', animationDelay: '.1s' }}
             >
               <span className="metal-text">OPTIMUS</span> <span className="gold-text">'27</span>
             </h1>
@@ -3948,7 +4000,7 @@ export default function App() {
 
             {/* ENTER: the Autobot insignia. On click it flies to the screen centre, zooms
                 up huge and vanishes into the site (offsets measured at click time). */}
-            <div className="emblem-in mt-[clamp(8px,2vh,20px)]" style={{ animationDelay: '0s' }}>
+            <div className="emblem-in mt-[clamp(8px,2vh,20px)]" style={{ animationDelay: '.1s' }}>
               <button
                 type="button"
                 onClick={(e) => {
@@ -3965,13 +4017,12 @@ export default function App() {
                 <span className="gate-ring absolute -inset-[13%] rounded-full border border-dashed border-sky-300/25" />
                 <span className="gate-ring-rev absolute -inset-[6%] rounded-full border border-slate-300/15" />
                 <img
-                  src="/assets/logo-hd.webp"
+                  src={BASE + 'assets/logo-hd.webp'}
                   alt=""
                   width={240}
                   height={240}
-                  decoding="async"
+                  decoding="sync"
                   fetchPriority="high"
-                  onLoad={() => setMount3D(true)}
                   draggable={false}
                   className="gate-logo relative w-full h-full object-contain"
                 />
@@ -4020,7 +4071,7 @@ export default function App() {
           <button onClick={goHome} className="flex items-center gap-3 text-left">
             <div className="relative w-10 h-10 flex items-center justify-center">
               <img
-                src="/assets/logo-hd.webp"
+                src={BASE + 'assets/logo-hd.webp'}
                 alt="OPTIMUS '27"
                 width={28}
                 height={28}
@@ -4100,9 +4151,9 @@ export default function App() {
 
         {mobileMenuOpen && (
           <div className="lg:hidden border-b border-slate-800 bg-slate-950/95 p-4 space-y-1 font-mono text-xs">
-            <button onClick={goHome} className="block w-full text-left py-2 text-slate-300 font-bold">HOME</button>
+            <button onClick={goHome} className="block w-full text-left py-3 text-slate-300 font-bold">HOME</button>
             {HEROES.map((h) => (
-              <button key={h.key} onClick={() => goHero(h.key)} className={`block w-full text-left py-2 font-bold ${THEME[h.theme].text}`}>
+              <button key={h.key} onClick={() => goHero(h.key)} className={`block w-full text-left py-3 font-bold ${THEME[h.theme].text}`}>
                 {h.name} <span className="text-slate-500">· {h.tagline}</span>
               </button>
             ))}
@@ -4119,10 +4170,10 @@ export default function App() {
           /* ======================= HOME ======================= */
           <>
             {/* Hero band — pointer-events pass through to the 3D scene except on controls */}
-            <section className="min-h-[calc(100vh-5rem)] flex items-start sm:items-center justify-center relative px-4 pt-3 pb-56 sm:py-16 sm:[@media(max-height:820px)]:py-6 pointer-events-none">
+            <section className="min-h-[calc(100vh-5rem)] flex items-start sm:items-center justify-center relative px-4 pt-3 pb-36 sm:py-16 sm:[@media(max-height:820px)]:py-6 pointer-events-none">
               <div className={`max-w-5xl mx-auto text-center space-y-4 sm:space-y-7 ${entered ? 'scene-in' : ''}`}>
                 <img
-                  src="/assets/kpr-hd.png"
+                  src={BASE + 'assets/kpr-hd.png'}
                   alt="KPR Institute of Engineering and Technology"
                   decoding="async"
                   className="kpr-bold mx-auto w-auto object-contain"
@@ -4146,7 +4197,7 @@ export default function App() {
                 </p>
 
                 {/* Buttons + countdown sit a little lower without moving the title above them. */}
-                <div className="relative top-4 sm:top-8">
+                <div className="relative pt-2 sm:pt-0 sm:top-8">
                 <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-2 pointer-events-auto">
                   <button
                     onClick={() => openRegister()}
@@ -4164,6 +4215,39 @@ export default function App() {
 
                 {/* Countdown, below the call-to-action buttons */}
                 <Countdown />
+                </div>
+
+                {/* Phone-only quick info: the floating HUD panels are hidden on small screens, so the
+                    useful bits (venue, dates, sponsors) live here with one-tap actions. */}
+                <div className="sm:hidden pointer-events-auto space-y-3 pt-1">
+                  <div className="rounded-xl border border-slate-700/70 bg-slate-950/85 px-4 py-3 text-left">
+                    <div className="text-[10px] font-mono tracking-[0.25em] text-slate-400 uppercase">Feb 4–5, 2027 · Coimbatore</div>
+                    <div className="mt-0.5 text-sm font-bold text-slate-100">KPR Institute of Engineering and Technology</div>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <a
+                        href="https://www.google.com/maps/search/?api=1&query=11.0782,77.1386"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center justify-center gap-1.5 rounded-lg bg-slate-900 border border-slate-700 py-3 text-[11px] font-mono font-bold tracking-widest text-cyan-300 active:scale-95"
+                      >
+                        <MapPin className="w-4 h-4" /> DIRECTIONS
+                      </a>
+                      <a
+                        href={'data:text/calendar;charset=utf-8,' + encodeURIComponent(
+                          'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//OPTIMUS 27//EN\r\nBEGIN:VEVENT\r\nUID:optimus27-fest@kpriet\r\nDTSTAMP:20270101T000000Z\r\nDTSTART;VALUE=DATE:20270204\r\nDTEND;VALUE=DATE:20270206\r\nSUMMARY:OPTIMUS \'27 - National Level Techno Fest\r\nLOCATION:KPR Institute of Engineering and Technology\\, Coimbatore\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n'
+                        )}
+                        download="optimus27.ics"
+                        className="flex items-center justify-center gap-1.5 rounded-lg bg-slate-900 border border-slate-700 py-3 text-[11px] font-mono font-bold tracking-widest text-amber-300 active:scale-95"
+                      >
+                        <CalendarPlus className="w-4 h-4" /> ADD DATES
+                      </a>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-center gap-4 opacity-90">
+                    <span className="text-[9px] font-mono tracking-[0.35em] text-cyan-200/80 uppercase">Presented by</span>
+                    <img src={BASE + 'assets/acmw.png'} alt="ACM-W" decoding="async" className="h-6 w-auto object-contain" />
+                    <img src={BASE + 'assets/nexora.png'} alt="NEXORA" decoding="async" className="h-7 w-auto object-contain" />
+                  </div>
                 </div>
 
               </div>
@@ -4728,7 +4812,7 @@ export default function App() {
       )}
 
       {/* ===================== FOOTER ===================== */}
-      <footer className="border-t border-slate-800/80 bg-slate-950/90 py-10 relative z-10 text-xs text-slate-400 font-mono">
+      <footer className="border-t border-slate-800/80 bg-slate-950/90 pt-10 pb-28 lg:pb-10 relative z-10 text-xs text-slate-400 font-mono">
         <div className="max-w-7xl mx-auto px-4 flex flex-col md:flex-row items-center justify-between gap-6 text-center md:text-left">
           <div className="flex items-center gap-2">
             <Zap className={`w-4 h-4 ${t.text}`} />
@@ -4741,9 +4825,48 @@ export default function App() {
         </div>
       </footer>
 
-      {/* ============ CYBERTRON HUD — bottom-left tactical panels (home only) ============ */}
+      {/* ============ PHONE ACTION BAR — thumb-reach navigation (hidden from the lg breakpoint up) ============ */}
+      {gate === 'gone' && (
+        <nav
+          aria-label="Quick navigation"
+          className="lg:hidden fixed inset-x-0 bottom-0 z-40 border-t border-slate-700/70 bg-slate-950/95 px-2 pt-1.5 grid grid-cols-5 gap-1 items-center"
+          style={{ paddingBottom: 'max(0.375rem, env(safe-area-inset-bottom))' }}
+        >
+          {([
+            { label: 'HOME', icon: <Home className="w-5 h-5" />, on: goHome, current: !active },
+            { label: 'LEADERS', icon: <Users className="w-5 h-5" />, on: goRoster, current: !!active },
+            { label: 'PASSES', icon: <Ticket className="w-5 h-5" />, on: goPasses, current: false }
+          ] as const).map((b) => (
+            <button
+              key={b.label}
+              onClick={b.on}
+              aria-current={b.current ? 'page' : undefined}
+              className={`flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-[9px] font-mono font-bold tracking-widest active:scale-95 ${b.current ? t.text : 'text-slate-400'}`}
+            >
+              {b.icon}
+              {b.label}
+            </button>
+          ))}
+          <button
+            onClick={toggleSound}
+            aria-label={soundEnabled ? 'Mute music' : 'Play music'}
+            className="flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-[9px] font-mono font-bold tracking-widest text-slate-400 active:scale-95"
+          >
+            {soundEnabled ? <Volume2 className={`w-5 h-5 ${t.text}`} /> : <VolumeX className="w-5 h-5" />}
+            {soundEnabled ? 'SOUND' : 'MUTED'}
+          </button>
+          <button
+            onClick={() => openRegister()}
+            className={`py-3 rounded-xl ${t.btn} text-[11px] font-black tracking-widest active:scale-95`}
+          >
+            REGISTER
+          </button>
+        </nav>
+      )}
+
+      {/* ============ CYBERTRON HUD — bottom-left tactical panels (home only, hidden on phones) ============ */}
       {gate === 'gone' && !active && (
-        <div className="hud-flat fixed left-2.5 sm:left-5 bottom-2.5 sm:bottom-5 z-40 pointer-events-none flex flex-col gap-2 sm:gap-2.5 w-[min(60vw,270px)]">
+        <div className="hud-flat fixed left-2.5 sm:left-5 bottom-2.5 sm:bottom-5 z-40 pointer-events-none hidden sm:flex flex-col gap-2 sm:gap-2.5 w-[min(60vw,270px)]">
           {/* SECTOR COORDINATES */}
           <div className="hud-panel-in relative overflow-hidden rounded-lg border border-cyan-400/30 bg-slate-950/80 px-3.5 py-2 sm:px-4 sm:py-2.5">
             <HudCorners />
@@ -4776,7 +4899,7 @@ export default function App() {
       {/* ============ Partner logos — bottom-right (home only) ============ */}
       {gate === 'gone' && !active && (
         <div
-          className="hud-flat hud-panel-in fixed right-3 sm:right-8 bottom-2 sm:bottom-4 z-40 pointer-events-none flex flex-col items-center"
+          className="hud-flat hud-panel-in fixed right-3 sm:right-8 bottom-2 sm:bottom-4 z-40 pointer-events-none hidden sm:flex flex-col items-center"
           style={{ perspective: '900px' }}
         >
           <div className="flex flex-col items-center" style={{ transform: 'rotateY(-14deg)', transformOrigin: 'right center' }}>
@@ -4787,9 +4910,9 @@ export default function App() {
               <div className="hud-scan pointer-events-none absolute inset-x-0 top-0 h-6 bg-gradient-to-b from-cyan-300/15 to-transparent" />
               <div className="text-center text-[7px] sm:text-[9px] font-mono tracking-[0.4em] text-cyan-200/80 uppercase">Presented By</div>
               <div className="mt-1.5 sm:mt-2 flex items-center gap-1.5 sm:gap-4">
-                <img src="/assets/acmw.png" alt="ACM-W" decoding="async" className="h-5 sm:h-11 w-auto object-contain" />
+                <img src={BASE + 'assets/acmw.png'} alt="ACM-W" decoding="async" className="h-5 sm:h-11 w-auto object-contain" />
                 <div className="w-px self-stretch bg-gradient-to-b from-transparent via-slate-400/50 to-transparent" />
-                <img src="/assets/nexora.png" alt="NEXORA" decoding="async" className="h-6 sm:h-12 w-auto object-contain" />
+                <img src={BASE + 'assets/nexora.png'} alt="NEXORA" decoding="async" className="h-6 sm:h-12 w-auto object-contain" />
               </div>
             </div>
             {/* stand posts */}
