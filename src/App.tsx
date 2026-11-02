@@ -3519,6 +3519,14 @@ const MOTION_CSS = `
   100% { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)) scale(.4); opacity: 0; }
 }
 
+/* Header: transparent at the top, dark glass once scrolled (solid on weak GPUs: no blur over the 3D canvas) */
+.site-header { border-bottom: 1px solid transparent; transition: background-color .35s ease, border-color .35s ease, box-shadow .35s ease; }
+.site-header.hdr-solid {
+  background-color: rgba(3,7,18,.82); border-bottom-color: rgba(51,65,85,.6); box-shadow: 0 8px 24px rgba(0,0,0,.35);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+}
+.tier-low .site-header.hdr-solid { background-color: rgba(3,7,18,.95); -webkit-backdrop-filter: none; backdrop-filter: none; }
+
 /* Audio pill equaliser bars */
 .eq-bar { transform-origin: bottom; animation: eqBar 0.9s ease-in-out infinite alternate; }
 @keyframes eqBar { from { transform: scaleY(0.35); } to { transform: scaleY(1); } }
@@ -4536,6 +4544,14 @@ export default function App() {
   const [entered, setEntered] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<EventItem | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  // Header is see-through at the very top and gains a dark background once the page scrolls.
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 24);   // React skips the re-render when unchanged
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
   const [isRegisterOpen, setIsRegisterOpen] = useState(false);
   const [registerSuccess, setRegisterSuccess] = useState(false);
 
@@ -4922,7 +4938,7 @@ export default function App() {
       )}
 
       {/* ===================== HEADER ===================== */}
-      <header className={`fixed top-0 left-0 right-0 z-50 ${entered ? 'fade-in' : ''}`}>
+      <header className={`site-header fixed top-0 left-0 right-0 z-50 ${scrolled || mobileMenuOpen ? 'hdr-solid' : ''} ${entered ? 'fade-in' : ''}`}>
         <div className="relative px-5 sm:px-10 lg:px-6 2xl:px-10 h-20 flex items-center justify-between gap-3">
 
           <button onClick={goHome} className="flex items-center gap-3 text-left">
@@ -5028,46 +5044,46 @@ export default function App() {
           /* ======================= HOME ======================= */
           <>
             {/* Hero band — pointer-events pass through to the 3D scene except on controls */}
-            <section className="sm:min-h-[calc(100vh-5rem)] flex items-start sm:items-center justify-center relative px-4 pt-8 pb-6 sm:py-16 sm:[@media(max-height:820px)]:py-6 pointer-events-none">
-              <div className={`max-w-5xl mx-auto text-center space-y-4 sm:space-y-7 ${entered ? 'scene-in' : ''}`}>
-                <img
-                  src={BASE + 'assets/kpr-hd.png'}
-                  alt="KPR Institute of Engineering and Technology"
-                  decoding="async"
-                  className="kpr-bold mx-auto w-auto object-contain"
-                  style={{ height: 'clamp(2.75rem, 8vh, 6rem)', transform: 'translateY(1.5vh)' }}
-                />
-
-
-                {/* Sized against the viewport height so the wordmark stays inside the 3D gate ring behind it
-                    (the ring projects to ~54vh across at the fixed 48° FOV). */}
-                <h1 ref={heroTitleRef} className="opt-word font-black leading-none uppercase whitespace-nowrap" style={{ fontSize: 'clamp(1.7rem, min(6.25vh, 7.3vw), 5.5rem)', letterSpacing: '-0.035em' }}>
-                  <span className="metal-text">OPTIMUS</span> <span className="gold-text">'27</span>
-                </h1>
-                <p className="font-extrabold tracking-widest text-slate-200 max-w-3xl mx-auto uppercase" style={{ fontSize: 'clamp(0.85rem, min(2vh, 3.8vw), 1.2rem)' }}>
-                  ROLL OUT. TRANSFORM YOUR <span className={`${t.text} underline decoration-2`}>DESTINY</span>
-                </p>
-
-                {/* Buttons + countdown sit a little lower without moving the title above them. */}
-                <div className="relative pt-14 sm:pt-0 sm:top-8">
-                {/* Side by side on every screen, so on phones the buttons stay low and clear of the leaders' faces. */}
-                <div className="flex flex-row items-stretch justify-center gap-2.5 sm:gap-4 pt-2 pointer-events-auto">
-                  <button
-                    onClick={() => openRegister()}
-                    className={`flex-1 sm:flex-none px-3 sm:px-8 py-3 sm:py-4 rounded-xl ${t.btn} text-[11px] sm:text-xs font-black tracking-wider sm:tracking-widest shadow-2xl flex items-center justify-center gap-1 sm:gap-2 group transition-all hover:scale-105 whitespace-nowrap`}
-                  >
-                    REGISTER NOW <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5 group-hover:translate-x-1 transition-transform" />
-                  </button>
-                  <a
-                    href="#roster"
-                    className="flex-1 sm:flex-none flex items-center justify-center px-3 sm:px-8 py-3 sm:py-4 rounded-xl bg-slate-900/90 border border-slate-700/80 hover:bg-slate-800 text-slate-200 text-[11px] sm:text-xs font-mono font-bold tracking-wider sm:tracking-widest transition-all whitespace-nowrap"
-                  >
-                    MEET THE LEADERS
-                  </a>
+            {/* Phones: one stacked column. sm+: each block is pinned to the 3D gate ring, whose
+                landscape projection is fixed by the camera (48° FOV): top edge ≈ 18.9vh, centre ≈ 46.2vh,
+                bottom ≈ 72.9vh. The section starts 5rem down (under the header), hence the "- 5rem". */}
+            <section
+              className="relative px-4 pt-8 pb-6 sm:p-0 sm:h-[calc(100svh-5rem)] pointer-events-none"
+              style={{ ['--tf' as string]: 'clamp(1.7rem, min(6.25vh, 7.3vw), 5.5rem)' }}
+            >
+              <div className={`max-w-5xl mx-auto text-center space-y-4 sm:space-y-0 ${entered ? 'scene-in' : ''}`}>
+                {/* KPR: just inside the top of the ring */}
+                <div className="sm:absolute sm:inset-x-0 sm:top-[calc(23.5vh-5rem)]">
+                  <img
+                    src={BASE + 'assets/kpr-hd.png'}
+                    alt="KPR Institute of Engineering and Technology"
+                    decoding="async"
+                    className="kpr-bold mx-auto w-auto object-contain"
+                    style={{ height: 'clamp(2.75rem, 8vh, 6rem)' }}
+                  />
                 </div>
 
-                {/* Countdown, below the call-to-action buttons */}
-                <Countdown />
+                {/* Title centred on the ring; sized against the viewport height so it stays inside it. */}
+                <div className="space-y-4 sm:space-y-5 sm:absolute sm:inset-x-0 sm:top-[calc(46.2vh-5rem-var(--tf)/2)]">
+                  <h1 ref={heroTitleRef} className="opt-word font-black leading-none uppercase whitespace-nowrap" style={{ fontSize: 'var(--tf)', letterSpacing: '-0.035em' }}>
+                    <span className="metal-text">OPTIMUS</span> <span className="gold-text">'27</span>
+                  </h1>
+                  <p className="font-extrabold tracking-widest text-slate-200 max-w-3xl mx-auto uppercase" style={{ fontSize: 'clamp(0.85rem, min(2vh, 3.8vw), 1.2rem)' }}>
+                    ROLL OUT. TRANSFORM YOUR <span className={`${t.text} underline decoration-2`}>DESTINY</span>
+                  </p>
+                </div>
+
+                {/* REGISTER NOW + countdown: at the leaders' feet, on the stage floor */}
+                <div className="relative pt-12 sm:pt-0 sm:absolute sm:inset-x-0 sm:bottom-[15vh]">
+                  <div className="flex justify-center pt-2 pointer-events-auto">
+                    <button
+                      onClick={() => openRegister()}
+                      className={`w-full max-w-xs sm:w-auto px-8 py-3.5 sm:py-4 rounded-xl ${t.btn} text-xs font-black tracking-widest shadow-2xl flex items-center justify-center gap-2 group transition-all hover:scale-105 whitespace-nowrap`}
+                    >
+                      REGISTER NOW <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5 group-hover:translate-x-1 transition-transform" />
+                    </button>
+                  </div>
+                  <Countdown />
                 </div>
 
                 {/* Phone-only quick info: the floating HUD panels are hidden on small screens, so the
