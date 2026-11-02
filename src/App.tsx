@@ -30,7 +30,10 @@ import {
   QrCode,
   Radio,
   Ticket,
-  Megaphone
+  Megaphone,
+  Home,
+  MapPin,
+  CalendarPlus
 } from 'lucide-react';
 import { listOverrides, listAnnouncements, addRegistration, recordVisit, Announcement, Overrides } from './adminData';
 // Public-folder files are served under the Vite base (the repo sub-path on GitHub Pages, '/' in dev).
@@ -3639,6 +3642,13 @@ export default function App() {
     setTimeout(() => document.getElementById('passes')?.scrollIntoView({ behavior: 'smooth' }), 80);
   }, []);
 
+  // Leaders list sits on the home page too, so leave any hero page first (phone action bar).
+  const goRoster = useCallback(() => {
+    setActiveHero(null);
+    setMobileMenuOpen(false);
+    setTimeout(() => document.getElementById('roster')?.scrollIntoView({ behavior: 'smooth' }), 80);
+  }, []);
+
   const toggleSound = () => {
     const next = !soundEnabled;
     setSoundEnabled(next);
@@ -4000,9 +4010,9 @@ export default function App() {
 
         {mobileMenuOpen && (
           <div className="lg:hidden border-b border-slate-800 bg-slate-950/95 p-4 space-y-1 font-mono text-xs">
-            <button onClick={goHome} className="block w-full text-left py-2 text-slate-300 font-bold">HOME</button>
+            <button onClick={goHome} className="block w-full text-left py-3 text-slate-300 font-bold">HOME</button>
             {HEROES.map((h) => (
-              <button key={h.key} onClick={() => goHero(h.key)} className={`block w-full text-left py-2 font-bold ${THEME[h.theme].text}`}>
+              <button key={h.key} onClick={() => goHero(h.key)} className={`block w-full text-left py-3 font-bold ${THEME[h.theme].text}`}>
                 {h.name} <span className="text-slate-500">· {h.tagline}</span>
               </button>
             ))}
@@ -4019,7 +4029,7 @@ export default function App() {
           /* ======================= HOME ======================= */
           <>
             {/* Hero band — pointer-events pass through to the 3D scene except on controls */}
-            <section className="min-h-[calc(100vh-5rem)] flex items-start sm:items-center justify-center relative px-4 pt-3 pb-56 sm:py-16 sm:[@media(max-height:820px)]:py-6 pointer-events-none">
+            <section className="min-h-[calc(100vh-5rem)] flex items-start sm:items-center justify-center relative px-4 pt-3 pb-36 sm:py-16 sm:[@media(max-height:820px)]:py-6 pointer-events-none">
               <div className={`max-w-5xl mx-auto text-center space-y-4 sm:space-y-7 ${entered ? 'scene-in' : ''}`}>
                 <img
                   src={BASE + 'assets/kpr-hd.png'}
@@ -4081,6 +4091,39 @@ export default function App() {
                   >
                     MEET THE LEADERS
                   </a>
+                </div>
+
+                {/* Phone-only quick info: the floating HUD panels are hidden on small screens, so the
+                    useful bits (venue, dates, sponsors) live here with one-tap actions. */}
+                <div className="sm:hidden pointer-events-auto space-y-3 pt-1">
+                  <div className="rounded-xl border border-slate-700/70 bg-slate-950/85 px-4 py-3 text-left">
+                    <div className="text-[10px] font-mono tracking-[0.25em] text-slate-400 uppercase">Feb 4–5, 2027 · Coimbatore</div>
+                    <div className="mt-0.5 text-sm font-bold text-slate-100">KPR Institute of Engineering and Technology</div>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <a
+                        href="https://www.google.com/maps/search/?api=1&query=11.0782,77.1386"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center justify-center gap-1.5 rounded-lg bg-slate-900 border border-slate-700 py-3 text-[11px] font-mono font-bold tracking-widest text-cyan-300 active:scale-95"
+                      >
+                        <MapPin className="w-4 h-4" /> DIRECTIONS
+                      </a>
+                      <a
+                        href={'data:text/calendar;charset=utf-8,' + encodeURIComponent(
+                          'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//OPTIMUS 27//EN\r\nBEGIN:VEVENT\r\nUID:optimus27-fest@kpriet\r\nDTSTAMP:20270101T000000Z\r\nDTSTART;VALUE=DATE:20270204\r\nDTEND;VALUE=DATE:20270206\r\nSUMMARY:OPTIMUS \'27 - National Level Techno Fest\r\nLOCATION:KPR Institute of Engineering and Technology\\, Coimbatore\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n'
+                        )}
+                        download="optimus27.ics"
+                        className="flex items-center justify-center gap-1.5 rounded-lg bg-slate-900 border border-slate-700 py-3 text-[11px] font-mono font-bold tracking-widest text-amber-300 active:scale-95"
+                      >
+                        <CalendarPlus className="w-4 h-4" /> ADD DATES
+                      </a>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-center gap-4 opacity-90">
+                    <span className="text-[9px] font-mono tracking-[0.35em] text-cyan-200/80 uppercase">Presented by</span>
+                    <img src={BASE + 'assets/acmw.png'} alt="ACM-W" decoding="async" className="h-6 w-auto object-contain" />
+                    <img src={BASE + 'assets/nexora.png'} alt="NEXORA" decoding="async" className="h-7 w-auto object-contain" />
+                  </div>
                 </div>
 
               </div>
@@ -4647,7 +4690,7 @@ export default function App() {
       )}
 
       {/* ===================== FOOTER ===================== */}
-      <footer className="border-t border-slate-800/80 bg-slate-950/90 py-10 relative z-10 text-xs text-slate-400 font-mono">
+      <footer className="border-t border-slate-800/80 bg-slate-950/90 pt-10 pb-28 lg:pb-10 relative z-10 text-xs text-slate-400 font-mono">
         <div className="max-w-7xl mx-auto px-4 flex flex-col md:flex-row items-center justify-between gap-6 text-center md:text-left">
           <div className="flex items-center gap-2">
             <Zap className={`w-4 h-4 ${t.text}`} />
@@ -4660,9 +4703,48 @@ export default function App() {
         </div>
       </footer>
 
-      {/* ============ CYBERTRON HUD — bottom-left tactical panels (home only) ============ */}
+      {/* ============ PHONE ACTION BAR — thumb-reach navigation (hidden from the lg breakpoint up) ============ */}
+      {gate === 'gone' && (
+        <nav
+          aria-label="Quick navigation"
+          className="lg:hidden fixed inset-x-0 bottom-0 z-40 border-t border-slate-700/70 bg-slate-950/95 px-2 pt-1.5 grid grid-cols-5 gap-1 items-center"
+          style={{ paddingBottom: 'max(0.375rem, env(safe-area-inset-bottom))' }}
+        >
+          {([
+            { label: 'HOME', icon: <Home className="w-5 h-5" />, on: goHome, current: !active },
+            { label: 'LEADERS', icon: <Users className="w-5 h-5" />, on: goRoster, current: !!active },
+            { label: 'PASSES', icon: <Ticket className="w-5 h-5" />, on: goPasses, current: false }
+          ] as const).map((b) => (
+            <button
+              key={b.label}
+              onClick={b.on}
+              aria-current={b.current ? 'page' : undefined}
+              className={`flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-[9px] font-mono font-bold tracking-widest active:scale-95 ${b.current ? t.text : 'text-slate-400'}`}
+            >
+              {b.icon}
+              {b.label}
+            </button>
+          ))}
+          <button
+            onClick={toggleSound}
+            aria-label={soundEnabled ? 'Mute music' : 'Play music'}
+            className="flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-[9px] font-mono font-bold tracking-widest text-slate-400 active:scale-95"
+          >
+            {soundEnabled ? <Volume2 className={`w-5 h-5 ${t.text}`} /> : <VolumeX className="w-5 h-5" />}
+            {soundEnabled ? 'SOUND' : 'MUTED'}
+          </button>
+          <button
+            onClick={() => openRegister()}
+            className={`py-3 rounded-xl ${t.btn} text-[11px] font-black tracking-widest active:scale-95`}
+          >
+            REGISTER
+          </button>
+        </nav>
+      )}
+
+      {/* ============ CYBERTRON HUD — bottom-left tactical panels (home only, hidden on phones) ============ */}
       {gate === 'gone' && !active && (
-        <div className="hud-flat fixed left-2.5 sm:left-5 bottom-2.5 sm:bottom-5 z-40 pointer-events-none flex flex-col gap-2 sm:gap-2.5 w-[min(60vw,270px)]">
+        <div className="hud-flat fixed left-2.5 sm:left-5 bottom-2.5 sm:bottom-5 z-40 pointer-events-none hidden sm:flex flex-col gap-2 sm:gap-2.5 w-[min(60vw,270px)]">
           {/* SECTOR COORDINATES */}
           <div className="hud-panel-in relative overflow-hidden rounded-lg border border-cyan-400/30 bg-slate-950/80 px-3.5 py-2 sm:px-4 sm:py-2.5">
             <HudCorners />
@@ -4695,7 +4777,7 @@ export default function App() {
       {/* ============ Partner logos — bottom-right (home only) ============ */}
       {gate === 'gone' && !active && (
         <div
-          className="hud-flat hud-panel-in fixed right-3 sm:right-8 bottom-2 sm:bottom-4 z-40 pointer-events-none flex flex-col items-center"
+          className="hud-flat hud-panel-in fixed right-3 sm:right-8 bottom-2 sm:bottom-4 z-40 pointer-events-none hidden sm:flex flex-col items-center"
           style={{ perspective: '900px' }}
         >
           <div className="flex flex-col items-center" style={{ transform: 'rotateY(-14deg)', transformOrigin: 'right center' }}>
