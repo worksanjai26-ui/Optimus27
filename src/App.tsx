@@ -4045,10 +4045,10 @@ export default function App() {
 
                 {/* Sized against the viewport height so the wordmark stays inside the 3D gate ring behind it
                     (the ring projects to ~54vh across at the fixed 48° FOV). */}
-                <h1 ref={heroTitleRef} className="opt-word font-black tracking-tight leading-none uppercase whitespace-nowrap" style={{ fontSize: 'clamp(1.9rem, min(7.5vh, 8.5vw), 6.5rem)' }}>
+                <h1 ref={heroTitleRef} className="opt-word font-black tracking-tight leading-none uppercase whitespace-nowrap" style={{ fontSize: 'clamp(1.6rem, min(6vh, 7vw), 5.25rem)' }}>
                   <span className="metal-text">OPTIMUS</span> <span className="gold-text">'27</span>
                 </h1>
-                <p className="font-extrabold tracking-widest text-slate-200 max-w-3xl mx-auto uppercase" style={{ fontSize: 'clamp(1rem, min(2.5vh, 4.6vw), 1.5rem)' }}>
+                <p className="font-extrabold tracking-widest text-slate-200 max-w-3xl mx-auto uppercase" style={{ fontSize: 'clamp(0.85rem, min(2vh, 3.8vw), 1.2rem)' }}>
                   ROLL OUT. TRANSFORM YOUR <span className={`${t.text} underline decoration-2`}>DESTINY</span>
                 </p>
 
@@ -4065,7 +4065,7 @@ export default function App() {
                       const cq = QUAD[[2, 0, 1, 3][i]];
                       return (
                       <div key={item.label} className={`bg-slate-950/90 p-3 rounded-xl border ${cq.border}`}>
-                        <span className={`font-num font-bold leading-none text-3xl sm:text-5xl ${cq.text}`}>
+                        <span className={`font-num font-bold leading-none text-2xl sm:text-4xl ${cq.text}`}>
                           {String(item.val).padStart(2, '0')}
                         </span>
                         <p className="text-[9px] sm:text-xs font-mono tracking-widest text-slate-400 mt-1">{item.label}</p>
@@ -4167,10 +4167,7 @@ export default function App() {
                         <div className={`w-16 h-16 rounded-2xl bg-slate-950 border ${ht.ring} p-4 ${ht.text} group-hover:scale-110 transition-transform`}>
                           {HERO_ICON[h.key]}
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className={`h-2 w-2 rounded-full ${ht.dot}`} />
-                          <span className="text-[10px] font-mono tracking-widest text-slate-400">{h.faction} · {h.role}</span>
-                        </div>
+                        <span className="block text-[10px] font-mono tracking-widest text-slate-400">{h.faction} · {h.role}</span>
                         <h3 className={`text-xl xl:text-2xl font-black tracking-tight uppercase ${ht.hoverText} transition-colors`}>
                           {h.name}
                         </h3>
@@ -4221,7 +4218,7 @@ export default function App() {
                           )}
                         </div>
                         <div className="relative mt-4 flex items-baseline gap-2">
-                          <span className="font-num font-bold leading-none text-5xl sm:text-6xl">{inr(p.price)}</span>
+                          <span className="font-num font-bold leading-none text-4xl sm:text-5xl">{inr(p.price)}</span>
                           <span className="text-xs font-mono text-slate-400">/ {p.team ? 'member' : 'person'}</span>
                         </div>
                         <p className="relative mt-2 text-sm text-slate-300">{p.blurb}</p>
@@ -4256,7 +4253,7 @@ export default function App() {
                 ].map((s, i) => (
                   <div key={i} className={`stat-tile p-5 rounded-2xl bg-slate-900/90 border ${QUAD[i].border} text-center space-y-2`}>
                     <div className={`stat-ico inline-flex p-3 rounded-xl bg-slate-950 border border-slate-800 ${QUAD[i].text}`}>{s.icon}</div>
-                    <h4 className={`font-num font-bold leading-none text-2xl sm:text-3xl ${QUAD[i].text}`}>{s.val}</h4>
+                    <h4 className={`font-sans font-semibold tracking-tight leading-none text-2xl sm:text-3xl ${QUAD[i].text}`}>{s.val}</h4>
                     <p className="text-[11px] font-mono tracking-wider text-slate-400 uppercase">{s.label}</p>
                   </div>
                 ))}
