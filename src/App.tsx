@@ -893,7 +893,12 @@ const ThreeHeroBackground = ({
       h: mount.clientHeight || window.innerHeight || 1
     });
     const size0 = getSize();
-    const lowPower = size0.w < 768 || (navigator.hardwareConcurrency || 8) <= 4;
+    const isPhone = size0.w < 768;
+    const weakCpu = (navigator.hardwareConcurrency || 8) <= 4 || ((navigator as { deviceMemory?: number }).deviceMemory ?? 8) <= 4;
+    const lowPower = isPhone || weakCpu;
+    // Phones with a capable CPU keep the wet mirror floor (at a smaller reflection buffer); only weak devices skip it.
+    const useMirror = !weakCpu;
+    const reflectScale = isPhone ? 0.35 : 0.5;
 
     /* ---------- renderer / camera ---------- */
     const scene = new THREE.Scene();
@@ -905,7 +910,9 @@ const ThreeHeroBackground = ({
     // Everything is drawn through the composer's multisampled target, so the canvas
     // itself needs no MSAA. Render scale adapts to the frame rate (see animate()).
     const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
-    const DPR_MAX = Math.min(window.devicePixelRatio, 1.25);
+    const DPR_MAX = Math.min(window.devicePixelRatio, isPhone ? 1 : 1.25);
+    const DPR_MIN = weakCpu ? 0.6 : 0.7;
+    let dprCap = DPR_MAX;   // lowered once effects have been shed, so the scale never creeps back up into lag
     let dpr = DPR_MAX;
     renderer.setSize(size0.w, size0.h);
     renderer.setPixelRatio(dpr);
@@ -1019,11 +1026,11 @@ const ThreeHeroBackground = ({
 
     /* ---------- wet reflective floor ---------- */
     let reflector: Reflector | null = null;
-    if (!lowPower) {
+    if (useMirror) {
       reflector = new Reflector(new THREE.PlaneGeometry(220, 220), {
         clipBias: 0.003,
-        textureWidth: Math.floor(size0.w * 0.5),
-        textureHeight: Math.floor(size0.h * 0.5),
+        textureWidth: Math.floor(size0.w * reflectScale),
+        textureHeight: Math.floor(size0.h * reflectScale),
         color: 0x1e2126
       });
       reflector.rotation.x = -Math.PI / 2;
@@ -2639,7 +2646,7 @@ const ThreeHeroBackground = ({
     /* ---------- post-processing: MSAA scene -> sanitize -> bloom -> tone-mapped output ---------- */
     // Post-processing bypasses the canvas' built-in antialiasing, so render into a
     // multisampled target to keep edges clean.
-    const samples = lowPower ? 0 : Math.min(4, renderer.capabilities.maxSamples);
+    const samples = weakCpu ? 0 : Math.min(isPhone ? 2 : 4, renderer.capabilities.maxSamples);
     const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(size0.w, size0.h, { type: THREE.HalfFloatType, samples }));
     composer.setSize(size0.w, size0.h);
     composer.setPixelRatio(dpr);
@@ -2715,7 +2722,7 @@ const ThreeHeroBackground = ({
       renderer.setSize(s.w, s.h);
       composer.setSize(s.w, s.h);
       bloom.setSize(s.w, s.h);
-      if (reflector) reflector.getRenderTarget().setSize(Math.floor(s.w * 0.5), Math.floor(s.h * 0.5));
+      if (reflector) reflector.getRenderTarget().setSize(Math.floor(s.w * reflectScale), Math.floor(s.h * reflectScale));
     };
     window.addEventListener('resize', onResize);
     // Re-sync when the pane goes from hidden (0x0) to visible.
@@ -2731,6 +2738,23 @@ const ThreeHeroBackground = ({
     let warmFrames = 0;        // frames rendered so far (shaders compile during these)
     let skipOdd = false;
     let perfAcc = 0, perfFrames = 0, headroomWindows = 0;
+    // Last-resort quality ladder for slow phones / old PCs, tried in order (each returns false if n/a).
+    const shedFx: (() => boolean)[] = [
+      () => {   // mirror floor re-renders the whole scene
+        if (!reflector || !reflector.visible) return false;
+        reflector.visible = false;
+        const fm = floor.material as THREE.MeshStandardMaterial;
+        fm.transparent = false;
+        fm.opacity = 1;
+        fm.needsUpdate = true;
+        return true;
+      },
+      () => { key.castShadow = false; return true; },
+      () => { bloom.enabled = false; return true; }
+    ];
+    // On portrait screens the roster is squeezed toward the middle so all four leaders stay in frame
+    // (1 on landscape / desktop, down to 0.45 on a tall phone).
+    const homeSpread = () => THREE.MathUtils.clamp(camera.aspect * 1.0, 0.45, 1);
     const applyDpr = () => {
       renderer.setPixelRatio(dpr);
       composer.setPixelRatio(dpr);
@@ -2760,13 +2784,18 @@ const ThreeHeroBackground = ({
         if (perfAcc > 1.2) {
           const avg = perfAcc / perfFrames;
           perfAcc = perfFrames = 0;
-          if (avg > 1 / 45 && dpr > 0.7) {
-            dpr = Math.max(0.7, +(dpr - 0.15).toFixed(2));
+          if (avg > 1 / 45 && dpr > DPR_MIN) {
+            dpr = Math.max(DPR_MIN, +(dpr - 0.15).toFixed(2));
             headroomWindows = 0;
             applyDpr();
-          } else if (avg < 1 / 57 && dpr < DPR_MAX) {
+          } else if (avg > 1 / 40 && shedFx.length) {
+            // Already at the lowest render scale and still slow: switch off the costliest effects, one at a time.
+            while (shedFx.length && !shedFx.shift()!()) { /* skip effects this device never had */ }
+            dprCap = dpr;
+            headroomWindows = 0;
+          } else if (avg < 1 / 57 && dpr < dprCap) {
             if (++headroomWindows >= 4) {
-              dpr = Math.min(DPR_MAX, +(dpr + 0.1).toFixed(2));
+              dpr = Math.min(dprCap, +(dpr + 0.1).toFixed(2));
               headroomWindows = 0;
               applyDpr();
             }
@@ -2854,7 +2883,7 @@ const ThreeHeroBackground = ({
         // Inspected hero walks to centre stage on the floor; the rest hold their roster marks.
         const g = rec.group;
         const ease = focused ? 0.1 : 0.14;
-        g.position.x += ((focused ? 0 : hero.layout.x) - g.position.x) * ease;
+        g.position.x += ((focused ? 0 : hero.layout.x * homeSpread()) - g.position.x) * ease;
         g.position.z += ((focused ? 0 : hero.layout.z) - g.position.z) * ease;
         g.position.y += ((focused ? GROUND_Y : rec.baseY) - g.position.y) * ease;
 
@@ -2972,8 +3001,10 @@ const ThreeHeroBackground = ({
           lookTarget.set(0, -1.2 + 3.1 * k, 0);
         }
       } else if (!focus) {
-        camTarget.set(mouse.x * 1.4 + Math.sin(time * 0.08) * 0.8, 2.6 + mouse.y * 0.5, 18);
-        lookTarget.set(0, 1.7, -1);
+        // Tall phone screens only see a narrow slice of the stage: pull the camera back (see homeSpread).
+        camTarget.set(mouse.x * 1.4 + Math.sin(time * 0.08) * 0.8, 2.6 + mouse.y * 0.5, 18 + (1 - homeSpread()) * 20);
+        // ...and aim higher so the roster sits lower, clear of the title and countdown card.
+        lookTarget.set(0, 1.7 + (1 - homeSpread()) * 5, -1);
       } else {
         // Fixed centre-stage framing for whichever hero is inspected.
         camTarget.set(mouse.x * 0.8, 2.4 + mouse.y * 0.4, 14);
