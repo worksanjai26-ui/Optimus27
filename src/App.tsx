@@ -33,6 +33,8 @@ import {
   Megaphone
 } from 'lucide-react';
 import { listOverrides, listAnnouncements, addRegistration, recordVisit, Announcement, Overrides } from './adminData';
+// Public-folder files are served under the Vite base (the repo sub-path on GitHub Pages, '/' in dev).
+const BASE =import.meta.env.BASE_URL;
 
 /* ------------------------------------------------------------------ *
  *  OPTIMUS '27  —  National Level Techno Fest
@@ -54,12 +56,12 @@ const EVENT_DATE = new Date('2027-02-04T09:00:00');
 // vehicle shells automatically; while a file is missing the code-built one is used.
 // length: bumper-to-bumper size on stage. yaw: extra turn (radians) if a model faces backwards.
 const VEHICLE_MODELS: Record<string, { src: string; length: number; yaw?: number }> = {
-  bumblebee: { src: '/models/bumblebee-car.glb', length: 5.9 },
-  megatron: { src: '/models/megatron-car.glb', length: 6.9 },
-  ratchet: { src: '/models/ratchet-car.glb', length: 6.6 }
+  bumblebee: { src: BASE + 'models/bumblebee-car.glb', length: 5.9 },
+  megatron: { src: BASE + 'models/megatron-car.glb', length: 6.9 },
+  ratchet: { src: BASE + 'models/ratchet-car.glb', length: 6.6 }
 };
 
-const MUSIC_SRC = '/music/theme.mp3';
+const MUSIC_SRC = BASE + 'music/theme.mp3';
 // The theme file is mastered very quietly (about -36 dB RMS, peaks near 8%), so it runs through a
 // Web Audio gain stage; MUSIC_VOLUME / MUSIC_DUCKED are the fader on top of that boost.
 const MUSIC_GAIN = 6;
@@ -68,7 +70,7 @@ const MUSIC_DUCKED = 0.35;
 // The transformation clip is cropped at play time to its busiest stretch (from..to, seconds into
 // the file) and starts `delay` seconds after the intro begins, so its big hit (~2.4s into the
 // file) lands on the 3D lock-in impact at INTRO_LOCK = 3.5s.
-const TRANSFORM_SFX = { src: '/sfx/transform.mp3', from: 0.6, to: 3.6, delay: 1.8, volume: 0.95 };
+const TRANSFORM_SFX = { src: BASE + 'sfx/transform.mp3', from: 0.6, to: 3.6, delay: 1.8, volume: 0.95 };
 
 type VehicleKind = 'car' | 'truck' | 'tank' | 'ambulance';
 
@@ -958,7 +960,7 @@ const ThreeHeroBackground = ({
     // Real photographed night-city lighting (Poly Haven "Shanghai Bund", CC0); the studio
     // environment above stays as the fallback until it loads.
     let envDisposed = false;
-    new RGBELoader().load('/env/shanghai_bund_2k.hdr', (hdr) => {
+    new RGBELoader().load(BASE + 'env/shanghai_bund_2k.hdr', (hdr) => {
       if (envDisposed) {
         hdr.dispose();
         return;
@@ -1302,7 +1304,7 @@ const ThreeHeroBackground = ({
       infoCv.t.needsUpdate = true;
     };
     const sponsorCv = liveCanvas(1024, 520);
-    const logoImgs: HTMLImageElement[] = ['/assets/acmw.png', '/assets/nexora.png'].map((src) => {
+    const logoImgs: HTMLImageElement[] = [BASE + 'assets/acmw.png', BASE + 'assets/nexora.png'].map((src) => {
       const im = new Image();
       im.src = src;
       return im;
@@ -3221,8 +3223,8 @@ const MOTION_CSS = `
 .gate-sheen {
   background: linear-gradient(105deg, transparent 38%, rgba(255,255,255,.62) 50%, transparent 62%);
   background-size: 260% 100%; background-repeat: no-repeat;
-  -webkit-mask: url(/assets/logo-hd.webp) center / contain no-repeat;
-          mask: url(/assets/logo-hd.webp) center / contain no-repeat;
+  -webkit-mask: url(${BASE}assets/logo-hd.webp) center / contain no-repeat;
+          mask: url(${BASE}assets/logo-hd.webp) center / contain no-repeat;
   animation: gateSheen 6s ease-in-out 1s infinite;
 }
 @keyframes gateSheen { 0% { background-position: 130% 0; } 28%, 100% { background-position: -30% 0; } }
@@ -3842,7 +3844,7 @@ export default function App() {
                 <span className="gate-ring absolute -inset-[13%] rounded-full border border-dashed border-sky-300/25" />
                 <span className="gate-ring-rev absolute -inset-[6%] rounded-full border border-slate-300/15" />
                 <img
-                  src="/assets/logo-hd.webp"
+                  src={BASE + 'assets/logo-hd.webp'}
                   alt=""
                   width={240}
                   height={240}
@@ -3897,7 +3899,7 @@ export default function App() {
           <button onClick={goHome} className="flex items-center gap-3 text-left">
             <div className={`relative p-1 rounded-xl border ${t.ring} ${t.glow} bg-slate-900/90 w-12 h-12 flex items-center justify-center`}>
               <img
-                src="/assets/logo-hd.webp"
+                src={BASE + 'assets/logo-hd.webp'}
                 alt="OPTIMUS '27"
                 width={28}
                 height={28}
@@ -3989,7 +3991,7 @@ export default function App() {
             <section className="min-h-[calc(100vh-5rem)] flex items-start sm:items-center justify-center relative px-4 pt-3 pb-56 sm:py-16 sm:[@media(max-height:820px)]:py-6 pointer-events-none">
               <div className={`max-w-5xl mx-auto text-center space-y-4 sm:space-y-7 ${entered ? 'scene-in' : ''}`}>
                 <img
-                  src="/assets/kpr-hd.png"
+                  src={BASE + 'assets/kpr-hd.png'}
                   alt="KPR Institute of Engineering and Technology"
                   decoding="async"
                   className="kpr-bold mx-auto w-auto object-contain"
@@ -4673,9 +4675,9 @@ export default function App() {
               <div className="hud-scan pointer-events-none absolute inset-x-0 top-0 h-6 bg-gradient-to-b from-cyan-300/15 to-transparent" />
               <div className="text-center text-[7px] sm:text-[9px] font-mono tracking-[0.4em] text-cyan-200/80 uppercase">Presented By</div>
               <div className="mt-1.5 sm:mt-2 flex items-center gap-1.5 sm:gap-4">
-                <img src="/assets/acmw.png" alt="ACM-W" decoding="async" className="h-5 sm:h-11 w-auto object-contain" />
+                <img src={BASE + 'assets/acmw.png'} alt="ACM-W" decoding="async" className="h-5 sm:h-11 w-auto object-contain" />
                 <div className="w-px self-stretch bg-gradient-to-b from-transparent via-slate-400/50 to-transparent" />
-                <img src="/assets/nexora.png" alt="NEXORA" decoding="async" className="h-6 sm:h-12 w-auto object-contain" />
+                <img src={BASE + 'assets/nexora.png'} alt="NEXORA" decoding="async" className="h-6 sm:h-12 w-auto object-contain" />
               </div>
             </div>
             {/* stand posts */}
