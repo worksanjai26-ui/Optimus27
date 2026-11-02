@@ -2845,7 +2845,9 @@ const ThreeHeroBackground = ({
       }
       const rawDt = clock.getDelta();
       warmFrames++;
-      if (warmFrames === 3) onReadyRef.current?.();
+      // Report ready only after a warm-up: shaders are compiled and the render scale has settled
+      // during these frames, so none of that work is left for the entry screen.
+      if (warmFrames === 40) onReadyRef.current?.();
       // Adaptive resolution: step the render scale down quickly when frames run long,
       // and back up only after sustained headroom (each change reallocates targets).
       // While scrolled down only every other frame is drawn, so halve the gap to compare like for like.
@@ -3457,6 +3459,66 @@ const MOTION_CSS = `
 .prize-in .prize-heading-sweep { animation: prizeHeadSweep 1.3s ease-out .8s 1 both; }
 @keyframes prizeHeadSweep { 0% { background-position: 150% 0; opacity: 1; } 100% { background-position: -50% 0; opacity: 0; } }
 
+/* Techno-fest section: slanted top edge that flattens as it scrolls in; words slide in from the sides */
+.tf-sec { clip-path: polygon(0 calc((1 - var(--p)) * 12vh), 100% 0, 100% 100%, 0 100%); }
+.tf-word {
+  --q: clamp(0, calc(var(--p) * 2.3 - var(--i) * 0.09), 1);
+  transform: translateX(calc((1 - var(--q)) * var(--from) * 38vw)) skewX(calc((1 - var(--q)) * var(--from) * -12deg));
+  opacity: var(--q);
+  will-change: transform, opacity;
+}
+.tf-kicker {
+  --q: clamp(0, calc((var(--p) - 0.6) * 6), 1);
+  opacity: var(--q); transform: translateY(calc((1 - var(--q)) * 18px)); letter-spacing: calc(0.06em + (1 - var(--q)) * 0.3em);
+}
+.tf-stat {
+  --q: clamp(0, calc((var(--p) - 0.72) * 8 - var(--k) * 0.3), 1);
+  opacity: var(--q); transform: translateY(calc((1 - var(--q)) * 34px));
+  /* chamfered Cybertron plate: the outer layer is the gold edge, the inner one the panel */
+  background: linear-gradient(135deg, rgba(250,204,21,.75), rgba(34,211,238,.35) 60%, rgba(250,204,21,.5));
+  padding: 1px;
+  clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
+}
+.tf-stat-in {
+  background: linear-gradient(180deg, rgba(15,23,42,.96), rgba(3,7,18,.96));
+  clip-path: polygon(13px 0, 100% 0, 100% calc(100% - 13px), calc(100% - 13px) 100%, 0 100%, 0 13px);
+}
+.tf-energon { background: linear-gradient(180deg, #ecfeff 0%, #67e8f9 35%, #22d3ee 60%, #0891b2 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.tf-decepticon { background: linear-gradient(180deg, #f5e8ff 0%, #d8b4fe 35%, #a855f7 60%, #7e22ce 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+/* click flash: a bright energon pulse ripples across the words, one after another */
+.tf-zap .tf-word { animation: tfZap .7s ease-out both; animation-delay: calc(var(--i) * 60ms); }
+@keyframes tfZap {
+  0% { filter: brightness(1); }
+  30% { filter: brightness(1.9) drop-shadow(0 0 18px rgba(103,232,249,.85)); }
+  100% { filter: brightness(1); }
+}
+.tf-emblem { transform: translate(-50%, -50%) scale(calc(0.75 + var(--p) * 0.35)) rotate(calc((1 - var(--p)) * -20deg)); }
+.tf-metal { background: linear-gradient(180deg, #ffffff 0%, #e2e8f0 45%, #94a3b8 60%, #e2e8f0 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.tf-gold { background: linear-gradient(180deg, #fff6b8 0%, #fde047 35%, #facc15 60%, #f59e0b 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.tf-hex {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='100' viewBox='0 0 56 100'%3E%3Cpath d='M28 66L0 50V16L28 0l28 16v34L28 66zm0 0v34' fill='none' stroke='%23facc15' stroke-width='1'/%3E%3C/svg%3E");
+  background-size: 56px 100px;
+}
+
+/* Click burst: a thin gold ring and energy sparks flying out from the pointer */
+.click-burst { position: fixed; left: 0; top: 0; width: 0; height: 0; pointer-events: none; z-index: 9999; }
+.click-burst .cb-ring {
+  position: absolute; left: -14px; top: -14px; width: 28px; height: 28px; border-radius: 9999px;
+  border: 1.5px solid rgba(250,204,21,.9); box-shadow: 0 0 10px rgba(250,204,21,.45);
+  animation: cbRing .45s cubic-bezier(.2,.8,.2,1) forwards;
+}
+.click-burst .cb-spark {
+  position: absolute; left: -2.5px; top: -2.5px; width: 5px; height: 5px;
+  animation: cbSpark .55s cubic-bezier(.15,.75,.3,1) forwards;
+}
+.click-burst .cb-spark.cb-shard { left: -3px; top: -3px; width: 6px; height: 6px; transform: rotate(45deg); }
+@keyframes cbRing { from { transform: scale(.3); opacity: 1; } to { transform: scale(1.6); opacity: 0; } }
+@keyframes cbSpark {
+  0% { transform: translate(0, 0) rotate(var(--rot)) scale(1); opacity: 1; }
+  70% { opacity: 1; }
+  100% { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)) scale(.4); opacity: 0; }
+}
+
 /* Audio pill equaliser bars */
 .eq-bar { transform-origin: bottom; animation: eqBar 0.9s ease-in-out infinite alternate; }
 @keyframes eqBar { from { transform: scaleY(0.35); } to { transform: scaleY(1); } }
@@ -3473,6 +3535,9 @@ const MOTION_CSS = `
   .gate-rise, .emblem-in, .scene-in, .fade-in,
   .prize-glow, .prize-mote, .prize-sweep, .prize-rise, .prize-plus-on, .prize-heading-sweep,
   .tr-3d, .tr-cup, .tr-base, .tr-hL, .tr-hR, .tr-star, .eq-bar { animation: none !important; }
+  .click-burst { display: none; }
+  .tf-sec { clip-path: none; }
+  .tf-zap .tf-word { animation: none; }
   .prize-trophy, .prize-rise, .prize-plus, .tr-cup, .tr-base, .tr-hL, .tr-hR, .tr-star { opacity: 1 !important; transform: none !important; }
   .lift-card:hover, .stat-tile:hover { transform: none; }
   .gate-mote, .gate-sheen { display: none; }
@@ -4024,6 +4089,199 @@ function MyPassPage({ profile, onProfile, onHome }: { profile: Profile | null; o
   );
 }
 
+/* ===================== "NATIONAL LEVEL TECHNO FEST" SCROLL SECTION ===================== */
+// Second "page" after the hero: an opaque Cybertron backdrop (drifting energon shards on dark steel,
+// a faint hex grid and a big Autobot insignia) where the headline assembles as you scroll.
+// Scroll progress is written to one CSS variable (--p, 0 → 1); every transform reads it in CSS,
+// so React never re-renders while scrolling.
+
+// Drifting energon shards: short diagonal streaks with a slight colour split (like a fast camera pass).
+function EnergonShards({ className }: { className?: string }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const cv = ref.current;
+    if (!cv) return;
+    const g = cv.getContext('2d');
+    if (!g) return;
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const lowTier = document.documentElement.classList.contains('tier-low');
+    const COUNT = lowTier ? 26 : 60;
+    const COLORS = ['250,204,21', '251,191,36', '34,211,238', '148,197,255'];
+    let w = 0, h = 0, raf = 0, visible = false, last = performance.now();
+    type Shard = { x: number; y: number; len: number; speed: number; alpha: number; c: string; thick: number };
+    const shards: Shard[] = [];
+    const spawn = (s: Partial<Shard> = {}): Shard => ({
+      x: Math.random() * w, y: Math.random() * h,
+      len: 14 + Math.random() * 46, speed: 40 + Math.random() * 120,
+      alpha: 0.25 + Math.random() * 0.6, c: COLORS[(Math.random() * COLORS.length) | 0],
+      thick: Math.random() < 0.2 ? 2.2 : 1.2, ...s
+    });
+    const resize = () => {
+      const dpr = Math.min(window.devicePixelRatio || 1, lowTier ? 1 : 1.5);
+      w = cv.clientWidth; h = cv.clientHeight;
+      cv.width = Math.max(1, Math.round(w * dpr));
+      cv.height = Math.max(1, Math.round(h * dpr));
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      if (!shards.length) for (let i = 0; i < COUNT; i++) shards.push(spawn());
+    };
+    // Shards fly down-right at a shallow angle.
+    const DX = Math.cos(0.38), DY = Math.sin(0.38);
+    const draw = (dt: number) => {
+      g.clearRect(0, 0, w, h);
+      g.globalCompositeOperation = 'lighter';
+      g.lineCap = 'round';
+      for (const s of shards) {
+        s.x += DX * s.speed * dt;
+        s.y += DY * s.speed * dt;
+        if (s.x - s.len > w || s.y - s.len > h) Object.assign(s, spawn({ x: -Math.random() * w * 0.3, y: Math.random() * h - h * 0.3 }));
+        const x2 = s.x - DX * s.len, y2 = s.y - DY * s.len;
+        // faint red/blue ghosts either side, then the bright core
+        g.lineWidth = s.thick;
+        g.strokeStyle = `rgba(239,68,68,${s.alpha * 0.35})`;
+        g.beginPath(); g.moveTo(s.x - 1.5, s.y); g.lineTo(x2 - 1.5, y2); g.stroke();
+        g.strokeStyle = `rgba(56,189,248,${s.alpha * 0.35})`;
+        g.beginPath(); g.moveTo(s.x + 1.5, s.y); g.lineTo(x2 + 1.5, y2); g.stroke();
+        g.strokeStyle = `rgba(${s.c},${s.alpha})`;
+        g.beginPath(); g.moveTo(s.x, s.y); g.lineTo(x2, y2); g.stroke();
+      }
+      g.globalCompositeOperation = 'source-over';
+    };
+    const loop = (t: number) => {
+      raf = requestAnimationFrame(loop);
+      const dt = Math.min((t - last) / 1000, 0.05);
+      last = t;
+      draw(dt);
+    };
+    resize();
+    draw(0);
+    // Only animate while on screen.
+    const io = new IntersectionObserver(([e]) => {
+      visible = e.isIntersecting;
+      cancelAnimationFrame(raf);
+      if (visible && !reduce) { last = performance.now(); raf = requestAnimationFrame(loop); }
+    });
+    io.observe(cv);
+    const ro = new ResizeObserver(() => { resize(); draw(0); });
+    ro.observe(cv);
+    return () => { cancelAnimationFrame(raf); io.disconnect(); ro.disconnect(); };
+  }, []);
+  return <canvas ref={ref} className={className} aria-hidden="true" />;
+}
+
+function TechnoFestSection() {
+  const ref = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { el.style.setProperty('--p', '1'); return; }
+    let raf = 0;
+    const update = () => {
+      raf = 0;
+      const r = el.getBoundingClientRect();
+      const vh = window.innerHeight;
+      // 0 when the section's top reaches the bottom of the screen, 1 once it has scrolled ~1 screen in.
+      const p = Math.min(1, Math.max(0, (vh - r.top) / (vh * 1.05)));
+      el.style.setProperty('--p', p.toFixed(3));
+    };
+    const onScroll = () => { if (!raf) raf = requestAnimationFrame(update); };
+    update();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll);
+    return () => { cancelAnimationFrame(raf); window.removeEventListener('scroll', onScroll); window.removeEventListener('resize', onScroll); };
+  }, []);
+
+  // Each word slides in from its own side; i staggers them so the headline assembles in order.
+  // Clicking the headline flashes an energon pulse across the words and moves to the next scheme.
+  const SCHEMES = [
+    ['text-white', 'tf-metal', 'tf-gold'],      // Autobot: white, silver, gold
+    ['text-white', 'tf-metal', 'tf-energon'],   // Energon: white, silver, cyan
+    ['text-white', 'tf-metal', 'tf-decepticon'] // Decepticon: white, silver, violet
+  ];
+  const [scheme, setScheme] = useState(0);
+  const [zap, setZap] = useState(0);   // bumps on every click to restart the flash animation
+  const lines: { words: string[]; cls: string }[] = [
+    { words: ['THE', 'BIGGEST'], cls: SCHEMES[scheme][0] },
+    { words: ['NATIONAL', 'LEVEL'], cls: SCHEMES[scheme][1] },
+    { words: ['TECHNO', 'FEST'], cls: SCHEMES[scheme][2] }
+  ];
+  const facts = [
+    { label: 'DATES', value: 'FEB 4 – 5', sub: '2027' },
+    { label: 'ARENAS', value: '04', sub: 'LEADERS' },
+    { label: 'EVENTS', value: '10+', sub: 'TECH & FUN' },
+    { label: 'HACKATHON', value: '24', sub: 'HOURS' }
+  ];
+  let wi = 0;
+  return (
+    <section ref={ref} className="tf-sec relative z-10 overflow-hidden" style={{ ['--p' as string]: 0 }}>
+      {/* Backdrop: dark Cybertron steel, energon shards, hex grid, insignia watermark */}
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_40%,#0f1b33_0%,#060a14_55%,#03050b_100%)]" />
+      <div className="tf-hex absolute inset-0 opacity-[0.07]" />
+      <img
+        src={BASE + 'assets/logo-hd.webp'} alt="" aria-hidden="true" decoding="async"
+        className="tf-emblem absolute left-1/2 top-1/2 w-[min(70vw,640px)] -translate-x-1/2 -translate-y-1/2 opacity-[0.06] pointer-events-none select-none"
+      />
+      <EnergonShards className="absolute inset-0 w-full h-full" />
+      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-amber-400/60 to-transparent" />
+
+      <div className="relative min-h-[100svh] flex flex-col items-center justify-center px-4 py-24 text-center">
+        <p className="tf-kicker font-sans text-sm sm:text-lg font-semibold tracking-[0.06em] text-slate-200">
+          KPR Institute of Engineering and Technology
+          <span className="mx-2.5 text-amber-400">·</span>
+          <span className="text-amber-300">Coimbatore</span>
+        </p>
+        <h2
+          key={zap}
+          onClick={() => { setScheme((n) => (n + 1) % SCHEMES.length); setZap((n) => n + 1); }}
+          title="Click me"
+          className={`mt-6 font-black uppercase leading-[0.88] tracking-tight cursor-pointer select-none ${zap ? 'tf-zap' : ''}`}
+          style={{ fontFamily: "'Archivo', sans-serif", fontStretch: '62%', fontSize: 'clamp(3rem, 10.5vw, 9.5rem)' }}
+        >
+          {lines.map((line, li) => (
+            <span key={li} className="block">
+              {line.words.map((word, k) => {
+                const i = wi++;
+                const from = k === 0 ? -1 : 1;
+                return (
+                  <span
+                    key={word}
+                    className={`tf-word inline-block ${line.cls}`}
+                    style={{ ['--i' as string]: i, ['--from' as string]: from, marginRight: k === 0 ? '0.18em' : 0 }}
+                  >
+                    {word}
+                  </span>
+                );
+              })}
+            </span>
+          ))}
+        </h2>
+        <div className="mt-12 grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 w-full max-w-4xl">
+          {facts.map((f, k) => (
+            <div key={f.label} className="tf-stat" style={{ ['--k' as string]: k }}>
+              <div className="tf-stat-in px-4 py-4 sm:py-5 text-left">
+                <div className="flex items-center gap-2">
+                  <span className="h-1.5 w-1.5 rotate-45 bg-cyan-400" />
+                  <span className="font-plex text-[10px] sm:text-[11px] font-semibold tracking-[0.3em] text-cyan-300/90">{f.label}</span>
+                </div>
+                <div className="mt-2 flex items-baseline gap-2">
+                  <span className="font-black leading-none text-white text-2xl sm:text-4xl whitespace-nowrap" style={{ fontFamily: "'Archivo', sans-serif", fontStretch: '62%', wordSpacing: '0.15em' }}>
+                    {f.value}
+                  </span>
+                  <span className="font-plex text-[10px] sm:text-[11px] font-bold tracking-widest text-amber-300">{f.sub}</span>
+                </div>
+                <div className="mt-3 flex gap-1" aria-hidden="true">
+                  {[0, 1, 2, 3, 4].map((b) => (
+                    <span key={b} className={`h-1 flex-1 ${b <= k ? 'bg-amber-400/80' : 'bg-slate-700/70'}`} />
+                  ))}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* ===================== PRIZE POOL SECTION ===================== */
 // Deterministic golden motes so React re-renders don't reshuffle them.
 const PRIZE_MOTES = Array.from({ length: 16 }, (_, i) => {
@@ -4175,6 +4433,34 @@ function HudCorners({ accent = 'cyan' }: { accent?: 'cyan' | 'amber' }) {
 export default function App() {
   const [activeHero, setActiveHero] = useState<string | null>(null);
   // Certificate and My Pass are their own pages (#certificate, #mypass), so Back/Forward and shared links work.
+  // Click burst: gold/cyan sparks at the pointer on every click (skipped for reduce-motion).
+  useEffect(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const COLORS = ['#facc15', '#fbbf24', '#fde68a', '#22d3ee', '#ffffff'];
+    const onDown = (e: PointerEvent) => {
+      if (e.button !== 0) return;
+      const burst = document.createElement('div');
+      burst.className = 'click-burst';
+      burst.style.transform = `translate(${e.clientX}px, ${e.clientY}px)`;
+      burst.innerHTML = '<span class="cb-ring"></span>';
+      const n = 10;
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2 + Math.random() * 0.4;
+        const d = 22 + Math.random() * 18;
+        const sp = document.createElement('span');
+        sp.className = i % 3 === 0 ? 'cb-spark cb-shard' : 'cb-spark';
+        sp.style.background = COLORS[i % COLORS.length];
+        sp.style.setProperty('--dx', `${Math.cos(a) * d}px`);
+        sp.style.setProperty('--dy', `${Math.sin(a) * d}px`);
+        sp.style.setProperty('--rot', i % 3 === 0 ? '45deg' : '0deg');
+        burst.appendChild(sp);
+      }
+      document.body.appendChild(burst);
+      window.setTimeout(() => burst.remove(), 600);
+    };
+    window.addEventListener('pointerdown', onDown, { passive: true });
+    return () => window.removeEventListener('pointerdown', onDown);
+  }, []);
   const [subPage, setSubPage] = useState<SubPage>(subPageFromHash);
   const [profile, setProfile] = useState<Profile | null>(currentProfile);
   useEffect(() => {
@@ -4225,14 +4511,26 @@ export default function App() {
     im.decode().then(ready, ready);
     const id = window.setTimeout(ready, 1500);   // never hold the page on a slow network
     setMount3D(true);                            // start the 3D build now, under the splash
-    const sceneFallback = window.setTimeout(() => setSceneReady(true), 6000);   // no WebGL / hidden tab
+    const sceneFallback = window.setTimeout(() => setSceneReady(true), 8000);   // no WebGL / hidden tab / very slow GPU
     return () => { clearTimeout(id); clearTimeout(sceneFallback); };
   }, []);
+  // The HTML intro (index.html) shows for at least INTRO_MIN, and keeps spinning until the logo and
+  // 3D scene are ready. Then it fades out and the entry screen starts its own reveal.
+  const [introDone, setIntroDone] = useState(() => !document.getElementById('splash'));
   useEffect(() => {
-    // Drop the instant HTML splash (logo + title) once the real entry screen is ready to take over.
     if (!gateReady) return;
     const s = document.getElementById('splash');
-    if (s) { s.style.opacity = '0'; setTimeout(() => s.remove(), 450); }
+    if (!s) { setIntroDone(true); return; }
+    const INTRO_MIN = 1800;   // long enough for one clean spin of the chakra
+    const started = (window as Window & { __introStart?: number }).__introStart ?? 0;
+    const wait = Math.max(0, INTRO_MIN - (performance.now() - started));
+    let removeId = 0;
+    const outId = window.setTimeout(() => {
+      s.classList.add('sp-out');
+      setIntroDone(true);
+      removeId = window.setTimeout(() => s.remove(), 550);
+    }, wait);
+    return () => { clearTimeout(outId); clearTimeout(removeId); };
   }, [gateReady]);
   // Becomes true as the entry screen starts to open: resumes the 3D scene and eases the site in.
   const [entered, setEntered] = useState(false);
@@ -4383,7 +4681,7 @@ export default function App() {
   }, []);
   // Enter / Space anywhere on the entry screen also enters (the button handles its own keys).
   useEffect(() => {
-    if (gate !== 'show') return;
+    if (gate !== 'show' || !introDone) return;   // not while the intro is still playing
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Enter' && e.key !== ' ') return;
       if (e.target instanceof HTMLButtonElement) return;
@@ -4392,7 +4690,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [gate, enterSite]);
+  }, [gate, enterSite, introDone]);
 
   const openRegister = (passId?: PassId) => {
     if (passId) setFormData((f) => ({ ...f, pass: passId }));
@@ -4535,7 +4833,7 @@ export default function App() {
           </div>
 
           <div
-            className={`gate-content relative h-full flex flex-col items-center justify-center text-center px-5 ${gateReady ? '' : 'gate-hold'}`}
+            className={`gate-content relative h-full flex flex-col items-center justify-center text-center px-5 ${gateReady && introDone ? '' : 'gate-hold'}`}
             style={{ gap: 'clamp(12px, 2.8vh, 28px)' }}
           >
             <div className="gate-rise gate-fade inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-amber-400/50 bg-amber-400/10 text-[10px] sm:text-xs font-mono font-bold tracking-[0.3em] text-amber-200 shadow-[0_0_18px_rgba(250,204,21,0.12)]">
@@ -4670,7 +4968,7 @@ export default function App() {
             </div>
           </button>
 
-          <nav className="hidden xl:flex ml-auto mr-2 2xl:mr-4 items-center gap-[18px] 2xl:gap-9 font-plex font-bold text-[12px] 2xl:text-[13px] uppercase tracking-[0.12em] 2xl:tracking-[0.16em]">
+          <nav className="hidden xl:flex absolute left-1/2 -translate-x-1/2 items-center gap-[18px] 2xl:gap-9 font-plex font-bold text-[12px] 2xl:text-[13px] uppercase tracking-[0.12em] 2xl:tracking-[0.16em]">
             <button onClick={goHome} className={`transition-colors hover:text-white ${!activeHero && !subPage ? t.text : 'text-white'}`}>HOME</button>
             {HEROES.map((h) => (
               <button
@@ -4740,12 +5038,6 @@ export default function App() {
                   style={{ height: 'clamp(2.75rem, 8vh, 6rem)', transform: 'translateY(1.5vh)' }}
                 />
 
-                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-slate-700/60 bg-slate-900/90 pointer-events-auto">
-                  <Sparkles className={`w-4 h-4 ${t.text}`} />
-                  <span className="text-[10px] sm:text-xs font-mono tracking-widest text-slate-300 uppercase">
-                    National Level Techno Fest
-                  </span>
-                </div>
 
                 {/* Sized against the viewport height so the wordmark stays inside the 3D gate ring behind it
                     (the ring projects to ~54vh across at the fixed 48° FOV). */}
@@ -4811,6 +5103,9 @@ export default function App() {
 
               </div>
             </section>
+
+            {/* Second "page": the headline on its own Transformers backdrop */}
+            <TechnoFestSection />
 
             {/* Overall prize-pool cinematic reveal */}
             <PrizePoolSection onExplore={() => document.getElementById('roster')?.scrollIntoView({
@@ -4969,23 +5264,6 @@ export default function App() {
               </div>
             </section>
 
-            {/* Highlights strip */}
-            <section className="py-16 px-4 max-w-7xl mx-auto">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {[
-                  { icon: <Rocket className="w-6 h-6" />, val: '24 Hrs', label: 'Flagship Hackathon' },
-                  { icon: <Trophy className="w-6 h-6" />, val: '10+', label: 'Events' },
-                  { icon: <Users className="w-6 h-6" />, val: 'National', label: 'Level Fest' },
-                  { icon: <Calendar className="w-6 h-6" />, val: '2 Days', label: 'Feb 4–5, 2027' }
-                ].map((s, i) => (
-                  <div key={i} className={`stat-tile p-5 rounded-2xl bg-slate-900/90 border border-slate-800 ${onHover(QUAD[i].border)} ${onHover(QUAD[i].glow)} text-center space-y-2`}>
-                    <div className={`stat-ico inline-flex p-3 rounded-xl bg-slate-950 border border-slate-800 ${QUAD[i].text}`}>{s.icon}</div>
-                    <h4 className={`font-sans font-semibold tracking-tight leading-none text-2xl sm:text-3xl ${QUAD[i].text}`}>{s.val}</h4>
-                    <p className="text-[11px] font-mono tracking-wider text-slate-400 uppercase">{s.label}</p>
-                  </div>
-                ))}
-              </div>
-            </section>
           </>
         ) : (
           /* ======================= HERO PAGE ======================= */
@@ -5503,7 +5781,7 @@ export default function App() {
           className="hidden lg:inline-flex fixed right-6 bottom-6 z-50 items-center gap-2.5 rounded-full border border-slate-700/80 bg-slate-950/85 px-4 py-2.5 font-plex text-xs font-bold tracking-widest text-slate-200 hover:border-slate-500 hover:text-white"
         >
           {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4 text-slate-500" />}
-          <span className={`flex items-end gap-[3px] h-3.5 ${soundEnabled ? 'text-cyan-400' : 'text-slate-600'}`} aria-hidden="true">
+          <span className={`flex items-end gap-[3px] h-3.5 ${soundEnabled ? 'text-amber-400' : 'text-slate-600'}`} aria-hidden="true">
             {[0.45, 0.8, 0.6, 1].map((h, i) => (
               <span
                 key={i}
