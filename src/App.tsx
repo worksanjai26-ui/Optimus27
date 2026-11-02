@@ -3554,7 +3554,7 @@ export default function App() {
   useEffect(() => {
     // The entry insignia's onLoad mounts the 3D scene once the logo has painted, so the
     // heavy scene build never delays the ENTER button. This is only a fallback.
-    const id = window.setTimeout(() => setMount3D(true), 2400);
+    const id = window.setTimeout(() => setMount3D(true), 1400);
     return () => clearTimeout(id);
   }, []);
   // The entry insignia is fully decoded before the entry screen reveals, so the logo and the
@@ -3677,6 +3677,7 @@ export default function App() {
   const enterSite = useCallback(() => {
     if (enteringRef.current) return;
     enteringRef.current = true;
+    setMount3D(true);   // tapped before the scene was built: start it now, under the ENTER hold
     audioFX.setMuted(false);
     setSoundEnabled(true);
     audioFX.start();
@@ -3905,7 +3906,7 @@ export default function App() {
                   height={240}
                   decoding="sync"
                   fetchPriority="high"
-                  onLoad={() => window.setTimeout(() => setMount3D(true), 900)}
+                  onLoad={() => window.setTimeout(() => setMount3D(true), 120)}
                   draggable={false}
                   className="gate-logo relative w-full h-full object-contain"
                 />
