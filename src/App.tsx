@@ -2668,8 +2668,10 @@ const ThreeHeroBackground = ({
     const smLife = new Float32Array(SMOKE);
     smGeo.setAttribute('position', new THREE.BufferAttribute(smPos, 3));
     smGeo.setAttribute('color', new THREE.BufferAttribute(smCol, 3));
+    // fog: false — idle particles are black and parked at the origin; fog would tint all 120 of them
+    // and, added together, they showed as a glowing dot in the middle of the stage.
     const smoke = new THREE.Points(smGeo, new THREE.PointsMaterial({
-      size: 2.2, map: glowTex, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending
+      size: 2.2, map: glowTex, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false
     }));
     smoke.frustumCulled = false;
     scene.add(smoke);
