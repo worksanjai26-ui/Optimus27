@@ -1,0 +1,11 @@
+node_modules/
+dist/
+
+# Local secrets (admin password hash)
+.env.local
+.env.*.local
+
+.claude/settings.local.json
+.DS_Store
+Thumbs.db
+*.log
