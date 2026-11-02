@@ -3570,7 +3570,7 @@ function PrizePoolSection({ onExplore }: { onExplore: () => void }) {
     <section
       ref={ref}
       aria-label="Overall prize pool: one lakh rupees and above"
-      className={`prize-sec relative py-24 sm:py-28 px-4 ${shown ? 'prize-in' : 'prize-pre'}`}
+      className={`prize-sec relative pt-10 pb-24 sm:pt-20 sm:pb-28 px-4 ${shown ? 'prize-in' : 'prize-pre'}`}
     >
       {/* Transparent section: the live 3D robot scene shows through. Only a soft gold halo
           behind the trophy + a few drifting motes are added, no opaque backdrop. */}
@@ -4172,7 +4172,7 @@ export default function App() {
           /* ======================= HOME ======================= */
           <>
             {/* Hero band — pointer-events pass through to the 3D scene except on controls */}
-            <section className="min-h-[calc(100vh-5rem)] flex items-start sm:items-center justify-center relative px-4 pt-3 pb-36 sm:py-16 sm:[@media(max-height:820px)]:py-6 pointer-events-none">
+            <section className="sm:min-h-[calc(100vh-5rem)] flex items-start sm:items-center justify-center relative px-4 pt-8 pb-6 sm:py-16 sm:[@media(max-height:820px)]:py-6 pointer-events-none">
               <div className={`max-w-5xl mx-auto text-center space-y-4 sm:space-y-7 ${entered ? 'scene-in' : ''}`}>
                 <img
                   src={BASE + 'assets/kpr-hd.png'}
@@ -4199,17 +4199,18 @@ export default function App() {
                 </p>
 
                 {/* Buttons + countdown sit a little lower without moving the title above them. */}
-                <div className="relative pt-2 sm:pt-0 sm:top-8">
-                <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-2 pointer-events-auto">
+                <div className="relative pt-14 sm:pt-0 sm:top-8">
+                {/* Side by side on every screen, so on phones the buttons stay low and clear of the leaders' faces. */}
+                <div className="flex flex-row items-stretch justify-center gap-2.5 sm:gap-4 pt-2 pointer-events-auto">
                   <button
                     onClick={() => openRegister()}
-                    className={`w-full sm:w-auto px-8 py-4 rounded-xl ${t.btn} text-xs font-black tracking-widest shadow-2xl flex items-center justify-center gap-2 group transition-all hover:scale-105`}
+                    className={`flex-1 sm:flex-none px-3 sm:px-8 py-3 sm:py-4 rounded-xl ${t.btn} text-[11px] sm:text-xs font-black tracking-wider sm:tracking-widest shadow-2xl flex items-center justify-center gap-1 sm:gap-2 group transition-all hover:scale-105 whitespace-nowrap`}
                   >
-                    REGISTER NOW <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                    REGISTER NOW <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5 group-hover:translate-x-1 transition-transform" />
                   </button>
                   <a
                     href="#roster"
-                    className="w-full sm:w-auto px-8 py-4 rounded-xl bg-slate-900/90 border border-slate-700/80 hover:bg-slate-800 text-slate-200 text-xs font-mono font-bold tracking-widest transition-all"
+                    className="flex-1 sm:flex-none flex items-center justify-center px-3 sm:px-8 py-3 sm:py-4 rounded-xl bg-slate-900/90 border border-slate-700/80 hover:bg-slate-800 text-slate-200 text-[11px] sm:text-xs font-mono font-bold tracking-wider sm:tracking-widest transition-all whitespace-nowrap"
                   >
                     MEET THE LEADERS
                   </a>
