@@ -412,7 +412,7 @@ export const HEROES: Hero[] = [
     colors: { primary: 0x4a2a8c, secondary: 0x1b1733, metal: 0x5e636d, visor: 0xe25cff, glow: 0xc44dff },
     vehicle: 'tank',
     features: { singleEye: true, cannon: true, tallAntennae: true },
-    layout: { x: -17.5, z: -10, scale: 1.24, y: 2.0 },
+    layout: { x: 17.5, z: -10, scale: 1.24, y: 2.0 },   // far right, on a dais
     events: [
       {
         id: 'workshop-core',
@@ -461,7 +461,7 @@ export const HEROES: Hero[] = [
     colors: { primary: 0xd9dee5, secondary: 0xb4161c, metal: 0x6d747e, visor: 0x3fe0ff, glow: 0x3fe0ff },
     vehicle: 'ambulance',
     features: { twinEyes: true, medicCross: true, wheels: true, lightBar: true },
-    layout: { x: 17.5, z: -10, scale: 1.24, y: 2.0 },
+    layout: { x: -17.5, z: -10, scale: 1.24, y: 2.0 },   // far left, on a dais
     prizePool: 9000,
     events: [
       {
@@ -1267,10 +1267,10 @@ const ThreeHeroBackground = ({
     // [title, subtitle, colour, x, y, z] — positioned in the open sky either side of the
     // centre column so the robots and hero text never cover them from the home camera.
     const BOARDS: [string, string, string, number, number, number][] = [
-      ['SHOCKWAVE', 'HANDS-ON WORKSHOPS', '#d05cff', -35, 15.2, -37.6],
+      ['RATCHET', 'NON-TECH ZONE', '#3fe0ff', -35, 15.2, -37.6],
       ['MEGATRON', 'PRESENTATION ARENA', '#ff3b3b', -20, 15.2, -37.6],
       ['BUMBLEBEE', '24-HOUR HACKATHON', '#ffd23a', 20, 15.2, -37.6],
-      ['RATCHET', 'NON-TECH ZONE', '#3fe0ff', 35, 15.2, -37.6]
+      ['SHOCKWAVE', 'HANDS-ON WORKSHOPS', '#d05cff', 35, 15.2, -37.6]
     ];
     const boards: THREE.MeshBasicMaterial[] = [];
     const boardBright = new THREE.Color(0.6, 0.6, 0.6);
@@ -3403,7 +3403,37 @@ const MOTION_CSS = `
 .fade-in { animation: fadeIn .7s ease .25s both; }
 
 /* ---------- Prize-pool section (transparent: the 3D robot scene shows through) ---------- */
-.prize-sec { background: transparent; }
+.prize-sec { background: #03050b; }
+/* Prize vault backdrop */
+.pv-vault { transform: translate(-50%, -50%); animation: pvTurn 90s linear infinite; will-change: transform; }
+.pv-vault-in { animation-duration: 60s; animation-direction: reverse; }
+@keyframes pvTurn { from { transform: translate(-50%, -50%) rotate(0deg); } to { transform: translate(-50%, -50%) rotate(360deg); } }
+.pv-beam { background: linear-gradient(0deg, rgba(250,204,21,.16), rgba(250,204,21,.04) 55%, transparent);
+  clip-path: polygon(38% 0, 62% 0, 100% 100%, 0 100%); }
+.pv-beam-r { background: linear-gradient(0deg, rgba(34,211,238,.14), rgba(34,211,238,.03) 55%, transparent); }
+.pv-floor { background:
+    linear-gradient(0deg, rgba(250,204,21,.10), transparent 70%),
+    repeating-linear-gradient(90deg, rgba(250,204,21,.10) 0 1px, transparent 1px 70px),
+    repeating-linear-gradient(0deg, rgba(250,204,21,.08) 0 1px, transparent 1px 42px);
+  transform: perspective(500px) rotateX(58deg); transform-origin: bottom center;
+  -webkit-mask-image: linear-gradient(0deg, #000 30%, transparent); mask-image: linear-gradient(0deg, #000 30%, transparent); }
+.tf-hex-fade { -webkit-mask-image: linear-gradient(180deg, #000 60%, transparent); mask-image: linear-gradient(180deg, #000 60%, transparent); }
+/* Energon conduit: a thin gold line with two bright pulses travelling down it (transform-only) */
+.pv-conduit { width: 2px; transform: translateX(-50%); overflow: hidden;
+  background: linear-gradient(180deg, rgba(250,204,21,.05), rgba(250,204,21,.55) 50%, rgba(250,204,21,.05)); box-shadow: 0 0 12px rgba(250,204,21,.35); }
+.pv-conduit i { position: absolute; left: -2px; width: 6px; height: 34px; top: -34px; border-radius: 6px;
+  background: linear-gradient(180deg, transparent, #fff6b8, #facc15, transparent); filter: drop-shadow(0 0 6px rgba(250,204,21,.9));
+  animation: pvPulse 1.6s cubic-bezier(.5,0,.5,1) infinite; will-change: transform; }
+.pv-conduit i + i { animation-delay: .8s; }
+@keyframes pvPulse { from { transform: translateY(0); } to { transform: translateY(calc(6rem + 68px)); } }
+.pv-glyphs {
+  -webkit-mask-image: linear-gradient(180deg, transparent, #000 22rem); mask-image: linear-gradient(180deg, transparent, #000 22rem);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120' fill='none' stroke='%23facc15' stroke-width='1.2'%3E%3Cpath d='M10 10h18v8H18v10M50 12h20M60 12v16M90 10l10 10-10 10M14 60h14l6 6v12M54 56h12v12H54zM92 60h16M100 52v16M12 100h10l8-8M52 96v14h16M90 100h20v10'/%3E%3C/svg%3E");
+  background-size: 120px 120px; }
+/* Prize figures: gold winner, silver, bronze */
+.pz-gold { background: linear-gradient(180deg, #fff6b8 0%, #fde047 35%, #facc15 60%, #d97706 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.pz-silver { background: linear-gradient(180deg, #ffffff 0%, #e2e8f0 45%, #94a3b8 70%, #cbd5e1 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.pz-bronze { background: linear-gradient(180deg, #ffe4c7 0%, #f0a868 40%, #c2702e 70%, #8a4b1c 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .prize-glow { background: radial-gradient(circle, rgba(250,204,21,.28) 0%, rgba(217,154,28,.1) 45%, transparent 70%); animation: prizeGlow 5s ease-in-out infinite; }
 @keyframes prizeGlow { 0%,100% { opacity: .65; } 50% { opacity: 1; } }
 .prize-mote { background: #fde68a; box-shadow: 0 0 8px rgba(250,204,21,.9); opacity: 0; }
@@ -3460,7 +3490,11 @@ const MOTION_CSS = `
 @keyframes prizeHeadSweep { 0% { background-position: 150% 0; opacity: 1; } 100% { background-position: -50% 0; opacity: 0; } }
 
 /* Techno-fest section: slanted top edge that flattens as it scrolls in; words slide in from the sides */
-.tf-sec { clip-path: polygon(0 calc((1 - var(--p)) * 12vh), 100% 0, 100% 100%, 0 100%); }
+.tf-sec {
+  /* --e: 0 while the page rests on the hero (the 6vh extension stays clipped away), 1 once scrolling has begun */
+  --e: clamp(0, calc((var(--p) - 0.06) * 6), 1);
+  clip-path: polygon(0 calc((1 - var(--e)) * 6vh + (1 - var(--p)) * 12vh), 100% calc((1 - var(--e)) * 6vh), 100% 100%, 0 100%);
+}
 .tf-word {
   --q: clamp(0, calc(var(--p) * 2.3 - var(--i) * 0.09), 1);
   transform: translateX(calc((1 - var(--q)) * var(--from) * 38vw)) skewX(calc((1 - var(--q)) * var(--from) * -12deg));
@@ -3544,6 +3578,7 @@ const MOTION_CSS = `
   .prize-glow, .prize-mote, .prize-sweep, .prize-rise, .prize-plus-on, .prize-heading-sweep,
   .tr-3d, .tr-cup, .tr-base, .tr-hL, .tr-hR, .tr-star, .eq-bar { animation: none !important; }
   .click-burst { display: none; }
+  .pv-vault, .pv-conduit i { animation: none; }
   .tf-sec { clip-path: none; }
   .tf-zap .tf-word { animation: none; }
   .prize-trophy, .prize-rise, .prize-plus, .tr-cup, .tr-base, .tr-hL, .tr-hR, .tr-star { opacity: 1 !important; transform: none !important; }
@@ -4220,18 +4255,23 @@ function TechnoFestSection() {
   ];
   let wi = 0;
   return (
-    <section ref={ref} className="tf-sec relative z-10 overflow-hidden" style={{ ['--p' as string]: 0 }}>
+    <section ref={ref} className="tf-sec relative z-10 overflow-hidden -mt-[6vh]" style={{ ['--p' as string]: 0 }}>
       {/* Backdrop: dark Cybertron steel, energon shards, hex grid, insignia watermark */}
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_40%,#0f1b33_0%,#060a14_55%,#03050b_100%)]" />
-      <div className="tf-hex absolute inset-0 opacity-[0.07]" />
+      <div className="tf-hex tf-hex-fade absolute inset-0 opacity-[0.07]" />
       <img
         src={BASE + 'assets/logo-hd.webp'} alt="" aria-hidden="true" decoding="async"
         className="tf-emblem absolute left-1/2 top-1/2 w-[min(70vw,640px)] -translate-x-1/2 -translate-y-1/2 opacity-[0.06] pointer-events-none select-none"
       />
       <EnergonShards className="absolute inset-0 w-full h-full" />
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-amber-400/60 to-transparent" />
+      <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-b from-transparent to-[#03050b]" aria-hidden="true" />
+      {/* Energon conduit, part 1: from under the fact panels down into the prize section */}
+      <div className="pv-conduit absolute left-1/2 bottom-0 h-20 sm:h-24" aria-hidden="true"><i /><i /></div>
 
-      <div className="relative min-h-[100svh] flex flex-col items-center justify-center px-4 py-24 text-center">
+      {/* The section starts 6vh higher (over the hero's empty floor) so its backdrop covers more of the
+          screen; the extra top padding keeps the headline where it was. */}
+      <div className="relative min-h-[calc(100svh+6vh)] flex flex-col items-center justify-center px-4 pb-24 pt-[calc(6rem+6vh)] text-center">
         <p className="tf-kicker font-sans text-sm sm:text-lg font-semibold tracking-[0.06em] text-slate-200">
           KPR Institute of Engineering and Technology
           <span className="mx-2.5 text-amber-400">·</span>
@@ -4346,10 +4386,38 @@ function PrizePoolSection({ onExplore }: { onExplore: () => void }) {
     <section
       ref={ref}
       aria-label="Overall prize pool: one lakh rupees and above"
-      className={`prize-sec relative pt-10 pb-24 sm:pt-20 sm:pb-28 px-4 ${shown ? 'prize-in' : 'prize-pre'}`}
+      className={`prize-sec relative z-10 overflow-hidden pt-16 pb-24 sm:pt-24 sm:pb-28 px-4 ${shown ? 'prize-in' : 'prize-pre'}`}
     >
-      {/* Transparent section: the live 3D robot scene shows through. Only a soft gold halo
-          behind the trophy + a few drifting motes are added, no opaque backdrop. */}
+      {/* Backdrop — "the AllSpark vault": dark Cybertron steel lit gold from the centre, a giant
+          vault-door mechanism turning slowly behind the trophy, energon light pillars, a faint
+          glyph wall and a glowing grid floor. Transform-only motion, so it stays smooth. */}
+      <div className="absolute inset-0 pointer-events-none" aria-hidden="true">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_70%_55%_at_50%_28%,#2a1d06_0%,#0b0f1c_55%,#03050b_100%)]" />
+        <div className="pv-glyphs absolute inset-0 opacity-[0.08]" />
+        {/* Seam: the top fades from the techno-fest section's dark steel, and its hex grid carries on and dissolves */}
+        <div className="absolute inset-x-0 top-0 h-[22rem] bg-gradient-to-b from-[#03050b] via-[#03050b]/70 to-transparent" />
+
+        <div className="pv-beam absolute bottom-0 left-[8%] w-[18vw] max-w-[220px] h-[85%]" />
+        <div className="pv-beam pv-beam-r absolute bottom-0 right-[8%] w-[18vw] max-w-[220px] h-[85%]" />
+        <svg className="pv-vault absolute left-1/2 top-[13rem] sm:top-[15rem] w-[min(120vw,980px)] h-auto" viewBox="0 0 400 400" fill="none">
+          <circle cx="200" cy="200" r="196" stroke="rgba(250,204,21,.28)" strokeWidth="1.2" />
+          <circle cx="200" cy="200" r="186" stroke="rgba(250,204,21,.16)" strokeWidth="7" strokeDasharray="3 9" />
+          <circle cx="200" cy="200" r="168" stroke="rgba(148,197,255,.16)" strokeWidth="1" strokeDasharray="60 18 8 18" />
+          <g stroke="rgba(250,204,21,.14)" strokeWidth="1">
+            {Array.from({ length: 12 }, (_, i) => {
+              const a = (i / 12) * Math.PI * 2;
+              return <line key={i} x1={200 + Math.cos(a) * 120} y1={200 + Math.sin(a) * 120} x2={200 + Math.cos(a) * 164} y2={200 + Math.sin(a) * 164} />;
+            })}
+          </g>
+        </svg>
+        <svg className="pv-vault pv-vault-in absolute left-1/2 top-[13rem] sm:top-[15rem] w-[min(78vw,640px)] h-auto" viewBox="0 0 400 400" fill="none">
+          <circle cx="200" cy="200" r="190" stroke="rgba(250,204,21,.3)" strokeWidth="2" strokeDasharray="120 30" />
+          <circle cx="200" cy="200" r="176" stroke="rgba(34,211,238,.18)" strokeWidth="1" />
+        </svg>
+        <div className="pv-floor absolute inset-x-0 bottom-0 h-[38%]" />
+        {/* Energon conduit, part 2: continues from the section above and feeds the trophy */}
+        <div className="pv-conduit absolute left-1/2 top-0 h-16 sm:h-24" aria-hidden="true"><i /><i /></div>
+      </div>
       <div className="prize-glow absolute left-1/2 top-[34%] -translate-x-1/2 -translate-y-1/2 w-[min(64vw,540px)] h-[min(64vw,540px)] rounded-full pointer-events-none" aria-hidden="true" />
       {PRIZE_MOTES.map((m, i) => (
         <span key={i} className="prize-mote absolute rounded-full" aria-hidden="true"
@@ -4409,10 +4477,56 @@ function PrizePoolSection({ onExplore }: { onExplore: () => void }) {
         <h2 className="prize-rise metal-text font-black uppercase tracking-[0.18em] mt-2" style={{ fontSize: 'clamp(1.1rem, 3.4vw, 2rem)', animationDelay: '.34s' }}>
           Overall Prize Pool
         </h2>
-        <div className="prize-rise mt-5 inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-amber-400/50 bg-amber-400/10 text-[11px] sm:text-sm font-mono font-bold tracking-[0.25em] text-amber-200 uppercase" style={{ animationDelay: '.46s' }}>
-          <Trophy className="w-4 h-4" /> 10+ Events · One Ultimate Experience
+
+        {/* Hackathon podium: 2nd · WINNER · 3rd */}
+        <div className="prize-rise mt-14 sm:mt-16 w-full" style={{ animationDelay: '.5s' }}>
+          <p className="font-plex text-[11px] sm:text-xs font-semibold tracking-[0.45em] text-amber-300">◆ BUMBLEBEE HACKATHON ◆</p>
+          <div className="mt-6 sm:mt-8 grid grid-cols-3 items-end gap-2 sm:gap-8">
+            {[
+              { rank: '2ND PLACE', amt: 20000, cls: 'pz-silver', size: 'clamp(1.6rem, 6vw, 4rem)', lift: '' },
+              { rank: 'WINNER', amt: 30000, cls: 'pz-gold', size: 'clamp(2.1rem, 8.5vw, 5.75rem)', lift: 'pb-4 sm:pb-8' },
+              { rank: '3RD PLACE', amt: 10000, cls: 'pz-bronze', size: 'clamp(1.6rem, 6vw, 4rem)', lift: '' }
+            ].map((pz) => (
+              <div key={pz.rank} className={`flex flex-col items-center ${pz.lift}`}>
+                <span className={`font-plex text-[10px] sm:text-xs font-bold tracking-[0.35em] ${pz.rank === 'WINNER' ? 'text-amber-300' : 'text-slate-300'}`}>{pz.rank}</span>
+                <span className="mt-1 mb-2 h-px w-10 sm:w-16 bg-gradient-to-r from-transparent via-amber-400/70 to-transparent" aria-hidden="true" />
+                <span className={`${pz.cls} font-black leading-none tabular-nums`} style={{ fontFamily: "'Archivo', sans-serif", fontStretch: '62%', fontSize: pz.size }}>
+                  {inr(pz.amt)}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
-        <div className="prize-rise mt-8" style={{ animationDelay: '.58s' }}>
+
+        {/* Technical / non-technical events: chamfered Cybertron plates */}
+        <div className="prize-rise mt-14 sm:mt-16 grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 w-full max-w-3xl" style={{ animationDelay: '.62s' }}>
+          {[
+            { title: 'TECHNICAL EVENTS', note: 'Presentations · Workshops', accent: 'text-cyan-300', dot: 'bg-cyan-400', prizes: [5000, 3000, 2000] },
+            { title: 'NON-TECHNICAL EVENTS', note: 'Photography · Gaming · Quiz', accent: 'text-fuchsia-300', dot: 'bg-fuchsia-400', prizes: [1500, 1000, 500] }
+          ].map((ev) => (
+            <div key={ev.title} className="tf-stat" style={{ ['--k' as string]: 0, opacity: 1, transform: 'none' }}>
+              <div className="tf-stat-in px-5 sm:px-6 py-5 text-left">
+                <div className="flex items-center gap-2">
+                  <span className={`h-1.5 w-1.5 rotate-45 ${ev.dot}`} />
+                  <span className={`font-plex text-[11px] sm:text-xs font-semibold tracking-[0.3em] ${ev.accent}`}>{ev.title}</span>
+                </div>
+                <p className="mt-1 text-[11px] text-slate-500">{ev.note}</p>
+                <div className="mt-4 space-y-2.5">
+                  {ev.prizes.map((amt, i) => (
+                    <div key={i} className="flex items-baseline justify-between gap-3 border-b border-slate-800/80 pb-2 last:border-0 last:pb-0">
+                      <span className="font-plex text-[11px] font-bold tracking-[0.25em] text-slate-400">{['1ST', '2ND', '3RD'][i]}</span>
+                      <span className={`font-black leading-none tabular-nums ${i === 0 ? 'pz-gold' : 'text-white'}`} style={{ fontFamily: "'Archivo', sans-serif", fontStretch: '62%', fontSize: i === 0 ? '2rem' : '1.6rem' }}>
+                        {inr(amt)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="prize-rise mt-12" style={{ animationDelay: '.74s' }}>
           <button onClick={onExplore} className="enter-btn inline-flex items-center gap-3 px-10 py-4 rounded-xl text-sm font-black uppercase tracking-[0.22em]">
             <span className="enter-sheen" aria-hidden="true" />
             <span className="relative">Explore Events</span>
@@ -5052,8 +5166,10 @@ export default function App() {
               style={{ ['--tf' as string]: 'clamp(1.7rem, min(6.25vh, 7.3vw), 5.5rem)' }}
             >
               <div className={`max-w-5xl mx-auto text-center space-y-4 sm:space-y-0 ${entered ? 'scene-in' : ''}`}>
-                {/* KPR: just inside the top of the ring */}
-                <div className="sm:absolute sm:inset-x-0 sm:top-[calc(23.5vh-5rem)]">
+                {/* Positions follow the agreed layout, in gate-ring radii (R ≈ 27vh) from its centre (46.2vh):
+                    KPR −0.61R, dateline −0.32R, title 0, tagline +0.30R; buttons start at 65vh, on the dark floor line where the ring meets the stage. */}
+                {/* KPR logo */}
+                <div className="sm:absolute sm:inset-x-0 sm:top-[calc(29.7vh-5rem)] sm:-translate-y-1/2">
                   <img
                     src={BASE + 'assets/kpr-hd.png'}
                     alt="KPR Institute of Engineering and Technology"
@@ -5063,27 +5179,49 @@ export default function App() {
                   />
                 </div>
 
+                {/* Dateline: fine gold rules either side of the fest dates */}
+                <div className="sm:absolute sm:inset-x-0 sm:top-[calc(37.6vh-5rem)] sm:-translate-y-1/2 flex items-center justify-center gap-3 sm:gap-4">
+                  <span className="h-px w-10 sm:w-20 bg-gradient-to-r from-transparent to-amber-400/80" aria-hidden="true" />
+                  <span className="font-plex font-semibold text-amber-300 text-[11px] sm:text-[13px] tracking-[0.35em] whitespace-nowrap">
+                    <span className="text-amber-400/80" aria-hidden="true">◆ </span>FEB 4 – 5 · 2027<span className="text-amber-400/80" aria-hidden="true"> ◆</span>
+                  </span>
+                  <span className="h-px w-10 sm:w-20 bg-gradient-to-l from-transparent to-amber-400/80" aria-hidden="true" />
+                </div>
+
                 {/* Title centred on the ring; sized against the viewport height so it stays inside it. */}
-                <div className="space-y-4 sm:space-y-5 sm:absolute sm:inset-x-0 sm:top-[calc(46.2vh-5rem-var(--tf)/2)]">
+                <div className="sm:absolute sm:inset-x-0 sm:top-[calc(46.2vh-5rem-var(--tf)/2)]">
                   <h1 ref={heroTitleRef} className="opt-word font-black leading-none uppercase whitespace-nowrap" style={{ fontSize: 'var(--tf)', letterSpacing: '-0.035em' }}>
                     <span className="metal-text">OPTIMUS</span> <span className="gold-text">'27</span>
                   </h1>
+                </div>
+
+                <div className="sm:absolute sm:inset-x-0 sm:top-[calc(54.3vh-5rem)] sm:-translate-y-1/2">
                   <p className="font-extrabold tracking-widest text-slate-200 max-w-3xl mx-auto uppercase" style={{ fontSize: 'clamp(0.85rem, min(2vh, 3.8vw), 1.2rem)' }}>
                     ROLL OUT. TRANSFORM YOUR <span className={`${t.text} underline decoration-2`}>DESTINY</span>
                   </p>
                 </div>
 
-                {/* REGISTER NOW + countdown: at the leaders' feet, on the stage floor */}
-                <div className="relative pt-12 sm:pt-0 sm:absolute sm:inset-x-0 sm:bottom-[15vh]">
-                  <div className="flex justify-center pt-2 pointer-events-auto">
+                {/* Buttons + countdown, starting just inside the bottom of the ring */}
+                <div className="relative sm:static pt-10 sm:pt-0">
+                  {/* Buttons on the dark floor line below the ring */}
+                  <div className="flex flex-row items-stretch justify-center gap-2.5 sm:gap-5 pointer-events-auto sm:absolute sm:inset-x-0 sm:top-[calc(65vh-5rem)]">
                     <button
                       onClick={() => openRegister()}
-                      className={`w-full max-w-xs sm:w-auto px-8 py-3.5 sm:py-4 rounded-xl ${t.btn} text-xs font-black tracking-widest shadow-2xl flex items-center justify-center gap-2 group transition-all hover:scale-105 whitespace-nowrap`}
+                      className={`flex-1 min-w-0 sm:flex-none px-2 sm:px-10 py-3 sm:py-4 rounded-xl ${t.btn} text-[11px] sm:text-xs font-black tracking-wide sm:tracking-widest shadow-2xl flex items-center justify-center gap-1 sm:gap-2 group transition-all hover:scale-105 whitespace-nowrap`}
                     >
                       REGISTER NOW <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5 group-hover:translate-x-1 transition-transform" />
                     </button>
+                    <a
+                      href="#roster"
+                      className="flex-1 min-w-0 sm:flex-none flex items-center justify-center px-2 sm:px-10 py-3 sm:py-4 rounded-xl bg-slate-900/90 border border-slate-700/80 hover:bg-slate-800 text-slate-200 text-[11px] sm:text-xs font-mono font-bold tracking-wide sm:tracking-widest transition-all whitespace-nowrap"
+                    >
+                      MEET THE LEADERS
+                    </a>
                   </div>
-                  <Countdown />
+                  {/* Countdown stays where it was: below a 52px button row that started at 68.2vh */}
+                  <div className="sm:absolute sm:inset-x-0 sm:top-[calc(68.2vh-5rem+52px)]">
+                    <Countdown />
+                  </div>
                 </div>
 
                 {/* Phone-only quick info: the floating HUD panels are hidden on small screens, so the
@@ -5851,7 +5989,7 @@ export default function App() {
 
       {/* ============ CYBERTRON HUD — bottom-left tactical panels (home only, hidden on phones) ============ */}
       {gate === 'gone' && !active && !subPage && (
-        <div className="hud-flat fixed left-2.5 sm:left-5 bottom-2.5 sm:bottom-5 z-40 pointer-events-none hidden sm:flex flex-col gap-2 sm:gap-2.5 w-[min(60vw,270px)]">
+        <div className="hud-flat fixed left-2.5 sm:left-5 bottom-2.5 sm:bottom-5 z-40 pointer-events-none hidden xl:flex flex-col gap-2 sm:gap-2.5 w-[min(60vw,270px)]">
           {/* SECTOR COORDINATES */}
           <div className="hud-panel-in relative overflow-hidden rounded-lg border border-cyan-400/30 bg-slate-950/80 px-3.5 py-2 sm:px-4 sm:py-2.5">
             <HudCorners />
@@ -5884,7 +6022,7 @@ export default function App() {
       {/* ============ Partner logos — bottom-right (home only) ============ */}
       {gate === 'gone' && !active && !subPage && (
         <div
-          className="hud-flat hud-panel-in fixed right-3 sm:right-8 lg:right-44 bottom-2 sm:bottom-4 z-40 pointer-events-none hidden sm:flex flex-col items-center"
+          className="hud-flat hud-panel-in fixed right-3 sm:right-8 lg:right-44 bottom-2 sm:bottom-4 z-40 pointer-events-none hidden xl:flex flex-col items-center"
           style={{ perspective: '900px' }}
         >
           <div className="flex flex-col items-center" style={{ transform: 'rotateY(-14deg)', transformOrigin: 'right center' }}>

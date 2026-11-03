@@ -59,6 +59,11 @@
       #splash .sp-load { width: min(220px, 52vw); height: 3px; border-radius: 3px; background: rgba(148,163,184,.18); overflow: hidden; }
       #splash .sp-load b { display: block; width: 38%; height: 100%; border-radius: 3px; background: linear-gradient(90deg, #facc15, #fde68a);
         will-change: transform; animation: spLoad 1.15s ease-in-out infinite; }
+      #splash .sp-text { margin-top: -6px; text-align: center; font-family: 'IBM Plex Mono', ui-monospace, monospace; }
+      #splash .sp-title { font-size: 12px; font-weight: 600; letter-spacing: .55em; margin-right: -.55em; color: #facc15;
+        animation: spPulse 1.4s ease-in-out infinite; }
+      #splash .sp-status { margin-top: 8px; font-size: 10px; letter-spacing: .3em; margin-right: -.3em; color: #64748b; min-height: 1.2em; }
+      @keyframes spPulse { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
       @keyframes spSpin { to { transform: rotate(360deg); } }
       @keyframes spLoad { 0% { transform: translateX(-100%); } 100% { transform: translateX(265%); } }
       @media (prefers-reduced-motion: reduce) { #splash .sp-chakra, #splash .sp-load b { animation-duration: 6s; } }
@@ -75,8 +80,24 @@
         <img class="sp-logo" src="/assets/logo-hd.webp" alt="" width="240" height="240" />
       </div>
       <div class="sp-load" aria-hidden="true"><b></b></div>
+      <div class="sp-text">
+        <div class="sp-title">LOADING</div>
+        <div class="sp-status" id="sp-status">INITIALIZING SYSTEMS</div>
+      </div>
     </div>
-    <script>window.__introStart = performance.now();</script>
+    <script>
+      window.__introStart = performance.now();
+      // Rotating Transformers-themed status line under LOADING (stops when the intro is removed).
+      (function () {
+        var lines = ['INITIALIZING SYSTEMS', 'CHARGING ENERGON CORE', 'ASSEMBLING THE ARENA', 'SUMMONING THE AUTOBOTS', 'ROLL OUT IN 3 · 2 · 1'];
+        var i = 0, el = document.getElementById('sp-status');
+        var id = setInterval(function () {
+          if (!document.getElementById('splash')) { clearInterval(id); return; }
+          i = (i + 1) % lines.length;
+          el.textContent = lines[i];
+        }, 1100);
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
