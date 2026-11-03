@@ -12,10 +12,6 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import {
   Zap,
   Shield,
-  Rocket,
-  Presentation,
-  Wrench,
-  Gamepad2,
   Trophy,
   Users,
   Calendar,
@@ -908,18 +904,35 @@ const probeQualityTier = (width: number): QualityTier => {
 // Lets the stylesheet drop paint-heavy decoration (filters, blurs, particles) on weaker devices.
 if (typeof document !== 'undefined') document.documentElement.classList.add(`tier-${detectQualityTier()}`);
 
+// Scroll-driven "events stage": the events section writes which leader is on stage and where
+// (u: −1 = left screen edge, +1 = right edge, beyond ±1 = off screen). Mutated in place on scroll,
+// read every frame, so scrolling never re-renders React.
+export type StageState = {
+  key: string | null;
+  u: number;
+  introId: number;     // bumps when a leader appears for the first time: play its drive-in + transform
+  introKey: string;
+  fromU: number;       // where that first entrance starts (off screen, on the card's side)
+  standU: number;      // where it stops and transforms
+  enterU: number;      // off-screen edge the current leader joins from (depends on scroll direction)
+  leaveKey: string;    // leader that just lost the stage: it keeps walking until it is off screen
+  leaveU: number;      // the off-screen edge it walks to
+};
+
 const ThreeHeroBackground = ({
   activeHero,
   onSelectHero,
   intro,
   paused = false,
-  onReady
+  onReady,
+  stage
 }: {
   activeHero: string | null;
   onSelectHero: (key: string) => void;
   intro: { key: string; id: number } | null;
   paused?: boolean;    // true while something opaque covers the scene
   onReady?: () => void;   // fired once the scene is built and its first frames are drawn
+  stage?: React.MutableRefObject<StageState>;
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const onReadyRef = useRef(onReady);
@@ -1536,6 +1549,11 @@ const ThreeHeroBackground = ({
       emissives: THREE.MeshStandardMaterial[];
       ring: THREE.Mesh;
       introStart: number;
+      introFrom: number;   // drive-in start x (world units)
+      introTo: number;     // where it stops and transforms
+      introCam: boolean;   // hero-page intro moves the camera; events-stage intro keeps the home view
+      stageHidden: boolean;  // faded out by the events stage: frozen where it left, snaps home when the stage ends
+      wasStaged: boolean;    // on the events stage last frame
       locked: boolean;
       head: THREE.Object3D;
       phase: number;
@@ -2478,7 +2496,7 @@ const ThreeHeroBackground = ({
       return {
         group: outer, rig, veh, panels, wheels, foldJoints, headRestY: head.position.y, siren, vehicle: hero.vehicle,
         vehMats: [carPaint, carAccent, tint, gunmetal, rimBarrel],
-        materials, emissives, ring, introStart: -1, locked: false, head, phase: Math.random() * Math.PI * 2, baseY,
+        materials, emissives, ring, introStart: -1, introFrom: -34, introTo: 0, introCam: true, stageHidden: false, wasStaged: false, locked: false, head, phase: Math.random() * Math.PI * 2, baseY,
         act: { shoulders: actShoulders, elbows: actElbows, cannon: actCannon, rigRestY: rig.position.y, headYaw: 0, headPitch: 0 }
       };
     };
@@ -2566,6 +2584,7 @@ const ThreeHeroBackground = ({
     const INTRO_END = 4.2;
     const DRIVE_FROM = -34;
     let lastIntroId = 0;
+    let lastStageIntro = 0;
     let introRec: HeroRec | null = null;
 
     // n = 0: robot folded prone inside the vehicle; n = 1: standing in its rest pose.
@@ -2838,7 +2857,9 @@ const ThreeHeroBackground = ({
       // Behind the opaque entry screen: render a short warm-up, then idle.
       if (pausedRef.current && warmFrames > 45) { clock.getDelta(); perfAcc = perfFrames = 0; return; }
       // Scrolled down into the page content the scene is mostly covered: draw at half rate.
-      const throttled = window.scrollY > window.innerHeight * 0.8;
+      // Full rate only while a leader is actually on the events stage.
+      const onStage = !!stage?.current.key && !!records[stage.current.key];
+      const throttled = window.scrollY > window.innerHeight * 0.8 && !onStage;
       if (throttled) {
         skipOdd = !skipOdd;
         if (skipOdd) return;
@@ -2897,6 +2918,9 @@ const ThreeHeroBackground = ({
         const rec = records[req.key];
         if (rec && !reduceMotion) {
           rec.introStart = clock.elapsedTime;
+          rec.introFrom = DRIVE_FROM;
+          rec.introTo = 0;
+          rec.introCam = true;
           rec.locked = false;
           rec.group.visible = true;
           rec.group.position.set(DRIVE_FROM, GROUND_Y, 0);
@@ -2918,6 +2942,38 @@ const ThreeHeroBackground = ({
         }
       }
 
+      // Events stage (scrolling the events section): one leader on the floor, the rest hidden.
+      const st = stage?.current;
+      const staging = !focus && !!st?.key;
+      // Visible half-width of the stage floor (z = 0) at the current camera distance.
+      const halfW = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * Math.abs(camera.position.z) * camera.aspect;
+      if (st && st.introId !== lastStageIntro) {
+        lastStageIntro = st.introId;
+        const rec = records[st.introKey];
+        if (rec && !reduceMotion && !focus) {
+          rec.introStart = clock.elapsedTime;
+          rec.introFrom = st.fromU * halfW;
+          rec.introTo = st.standU * halfW;
+          rec.introCam = false;
+          rec.locked = false;
+          rec.group.visible = true;
+          rec.group.position.set(rec.introFrom, GROUND_Y, 0);
+          rec.group.rotation.y = Math.sign(rec.introTo - rec.introFrom) * Math.PI / 2;
+          rec.materials.forEach((m) => { m.opacity = m.userData.base ?? 1; });
+          rec.veh.visible = true;
+          rec.veh.position.set(0, 0, 0);
+          rec.veh.rotation.set(0, 0, 0);
+          rec.panels.forEach((p) => {
+            p.obj.position.copy(p.p0);
+            p.obj.rotation.copy(p.r0);
+            p.obj.scale.setScalar(1);
+          });
+          rec.rig.visible = false;
+          applyUnfold(rec, 0);
+          introRec = rec;
+        }
+      }
+
       // Theme tint: the gate, backlight, sky glow and warm beams take on the inspected hero's colour.
       accentTarget.set(focus ? heroByKey(focus)!.colors.glow : DEFAULT_ACCENT);
       accentNow.lerp(accentTarget, 0.04);
@@ -2936,7 +2992,11 @@ const ThreeHeroBackground = ({
       HEROES.forEach((hero) => {
         const rec = records[hero.key];
         const focused = focus === hero.key;
-        const hidden = !!focus && !focused;
+        const staged = staging && st!.key === hero.key;
+        // Just lost the stage but still on screen: keep it visible while it walks off the edge.
+        const leaving = staging && !staged && st!.leaveKey === hero.key && rec.group.visible
+          && Math.abs(rec.group.position.x) < halfW * 1.15;
+        const hidden = (!!focus && !focused) || (staging && !staged && !leaving);
 
         // Fade + fully remove the non-inspected heroes so they never overlap the subject.
         const targetOpacity = hidden ? 0 : 1;
@@ -2949,7 +3009,7 @@ const ThreeHeroBackground = ({
 
         // Leaving a hero mid-transform (e.g. tapping Home right after opening it): stop the
         // intro at once and snap the rig to its finished pose so it eases straight back home.
-        if (!focused && rec.introStart >= 0) {
+        if (!focused && !staged && rec.introStart >= 0) {
           applyUnfold(rec, 1);
           rec.panels.forEach((p) => { p.obj.position.copy(p.p0); p.obj.rotation.copy(p.r0); p.obj.scale.setScalar(1); });
           rec.rig.visible = true;   // aborting during drive-in: show the robot body (the car never finished transforming)
@@ -2962,12 +3022,41 @@ const ThreeHeroBackground = ({
 
         // Inspected hero walks to centre stage on the floor; the rest hold their roster marks.
         const g = rec.group;
-        const ease = focused ? 0.1 : 0.14;
-        g.position.x += ((focused ? 0 : hero.layout.x * homeSpread()) - g.position.x) * ease;
-        g.position.z += ((focused ? 0 : hero.layout.z) - g.position.z) * ease;
-        g.position.y += ((focused ? GROUND_Y : rec.baseY) - g.position.y) * ease;
+        const ease = focused ? 0.1 : staged ? 0.09 : 0.14;
+        const tx = focused ? 0 : staged ? st!.u * halfW : hero.layout.x * homeSpread();
+        const prevX = g.position.x;
+        // Joining the events stage: start right at the target (an off-screen edge), not from home.
+        if (staged && !rec.wasStaged && rec.introStart < 0) {
+          g.position.set(st!.enterU * halfW, GROUND_Y, 0);
+          g.rotation.y = Math.sign(st!.u - st!.enterU) * Math.PI / 2;
+        }
+        rec.wasStaged = staged;
+        if (leaving) {
+          // Walk (briskly) to the edge it was headed for; it hides once fully off screen.
+          rec.stageHidden = true;
+          g.position.x += (st!.leaveU * halfW - g.position.x) * 0.11;
+          g.position.y += (GROUND_Y - g.position.y) * 0.11;
+          g.position.z += (0 - g.position.z) * 0.11;
+        } else if (staging && !staged) {
+          // Off stage while the events stage runs: stays hidden where it is.
+          rec.stageHidden = true;
+        } else if (!staging && rec.stageHidden) {
+          // Stage over (back on the main page): it is invisible right now, so drop it straight home.
+          rec.stageHidden = false;
+          g.position.set(hero.layout.x * homeSpread(), rec.baseY, hero.layout.z);
+        } else {
+          g.position.x += (tx - g.position.x) * ease;
+          g.position.z += ((focused || staged ? 0 : hero.layout.z) - g.position.z) * ease;
+          g.position.y += ((focused || staged ? GROUND_Y : rec.baseY) - g.position.y) * ease;
+        }
 
-        if (focused) {
+        if ((staged || leaving) && rec.introStart < 0) {
+          // On the events stage: face the way it travels while crossing, then turn to the camera.
+          const vx = (g.position.x - prevX) / Math.max(dt, 1e-4);
+          const want = Math.abs(vx) > 1.2 ? Math.sign(vx) * Math.PI / 2 : Math.atan2(camera.position.x - g.position.x, camera.position.z - g.position.z) * 0.6;
+          const wrapped = Math.atan2(Math.sin(g.rotation.y), Math.cos(g.rotation.y));
+          g.rotation.y = wrapped + (want - wrapped) * 0.12;
+        } else if (focused) {
           if (rec.introStart < 0) g.rotation.y += reduceMotion ? 0 : dt * 0.22;   // slow turntable
         } else {
           const wrapped = Math.atan2(Math.sin(g.rotation.y), Math.cos(g.rotation.y));
@@ -2988,8 +3077,8 @@ const ThreeHeroBackground = ({
             // Drive in: hard braking into a sideways skid that ends nose-to-camera.
             const u = Math.min(t / DRIVE, 1);
             const prevX = g.position.x;
-            g.position.set(DRIVE_FROM * Math.pow(1 - u, 3), GROUND_Y, 0);
-            g.rotation.y = (Math.PI / 2) * (1 - easeIO(t, DRIVE - 0.7, TF_START));
+            g.position.set(rec.introTo + (rec.introFrom - rec.introTo) * Math.pow(1 - u, 3), GROUND_Y, 0);
+            g.rotation.y = Math.sign(rec.introTo - rec.introFrom) * (Math.PI / 2) * (1 - easeIO(t, DRIVE - 0.7, TF_START));
             const speed = Math.abs(g.position.x - prevX) / Math.max(dt, 1e-4) / sc;
             rec.wheels.forEach((w) => { w.obj.rotation.x += (speed * dt) / w.r; });
             const brake = Math.sin(Math.PI * THREE.MathUtils.clamp((t - (DRIVE - 0.8)) / 1.1, 0, 1));
@@ -3013,7 +3102,7 @@ const ThreeHeroBackground = ({
             headBeam.intensity = 260;
           } else {
             // Transform: armour panels peel off along arcs onto the robot while it unfolds and stands.
-            g.position.set(0, GROUND_Y, 0);
+            g.position.set(rec.introTo, GROUND_Y, 0);
             g.rotation.y = 0;
             rec.veh.rotation.set(0, 0, 0);
             rec.veh.position.y = 0;
@@ -3037,7 +3126,7 @@ const ThreeHeroBackground = ({
             if (t >= INTRO_LOCK && !rec.locked) {
               rec.locked = true;
               rec.veh.visible = false;
-              burst(new THREE.Vector3(0, GROUND_Y + 4.3 * sc, 0.4), hero.colors.glow);
+              burst(new THREE.Vector3(rec.introTo, GROUND_Y + 4.3 * sc, 0.4), hero.colors.glow);
             }
             const rt = t - INTRO_LOCK;
             rec.ring.scale.setScalar(rt > 0 && rt < 0.8 ? 1 + rt * 5 : 1);
@@ -3068,7 +3157,7 @@ const ThreeHeroBackground = ({
         }
       });
 
-      if (introRec) {
+      if (introRec && introRec.introCam) {
         // Intro camera: tracks the vehicle in low, then rises and pushes in as the robot stands.
         const it = clock.elapsedTime - introRec.introStart;
         const gp = introRec.group.position;
@@ -3092,7 +3181,7 @@ const ThreeHeroBackground = ({
         lookTarget.set(0, 1.9, 0);
       }
       // Frame-rate independent easing, so the camera keeps up on slow devices too.
-      const camK = 1 - Math.exp(-(introRec ? 5.7 : 3.1) * Math.min(rawDt, 0.5));
+      const camK = 1 - Math.exp(-(introRec && introRec.introCam ? 5.7 : 3.1) * Math.min(rawDt, 0.5));
       camera.position.lerp(camTarget, camK);
       lookNow.lerp(lookTarget, camK);
       if (shakeT >= 0) {
@@ -3108,7 +3197,7 @@ const ThreeHeroBackground = ({
       // the countdown (a fixed 672px-wide block) or the legs of the side robots. They
       // scale with the viewport so they never overlap either. The 1.15 factor covers
       // the extra projected width of the angled board.
-      const showStands = !focus && !introRec && standMQ.matches;
+      const showStands = !focus && !introRec && !staging && standMQ.matches;
       const tanH = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.aspect;
       const halfPx = (mount.clientWidth || window.innerWidth) / 2;
       const legNdc = Math.max(...['megatron', 'bumblebee'].map((k) => {
@@ -4480,7 +4569,11 @@ function PrizePoolSection({ onExplore }: { onExplore: () => void }) {
 
         {/* Hackathon podium: 2nd · WINNER · 3rd */}
         <div className="prize-rise mt-14 sm:mt-16 w-full" style={{ animationDelay: '.5s' }}>
-          <p className="font-plex text-[11px] sm:text-xs font-semibold tracking-[0.45em] text-amber-300">◆ BUMBLEBEE HACKATHON ◆</p>
+          <div className="flex items-center justify-center gap-3">
+            <span className="h-2 w-2 rotate-45 bg-amber-400" />
+            <h3 className="text-lg sm:text-2xl font-black uppercase tracking-wide text-amber-300" style={{ fontStretch: '110%' }}>BUMBLEBEE HACKATHON</h3>
+            <span className="h-2 w-2 rotate-45 bg-amber-400" />
+          </div>
           <div className="mt-6 sm:mt-8 grid grid-cols-3 items-end gap-2 sm:gap-8">
             {[
               { rank: '2ND PLACE', amt: 20000, cls: 'pz-silver', size: 'clamp(1.6rem, 6vw, 4rem)', lift: '' },
@@ -4501,21 +4594,28 @@ function PrizePoolSection({ onExplore }: { onExplore: () => void }) {
         {/* Technical / non-technical events: chamfered Cybertron plates */}
         <div className="prize-rise mt-14 sm:mt-16 grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 w-full max-w-3xl" style={{ animationDelay: '.62s' }}>
           {[
-            { title: 'TECHNICAL EVENTS', note: 'Presentations · Workshops', accent: 'text-cyan-300', dot: 'bg-cyan-400', prizes: [5000, 3000, 2000] },
+            { title: 'TECHNICAL EVENTS', note: 'Presentations', accent: 'text-cyan-300', dot: 'bg-cyan-400', prizes: [5000, 3000, 2000] },
             { title: 'NON-TECHNICAL EVENTS', note: 'Photography · Gaming · Quiz', accent: 'text-fuchsia-300', dot: 'bg-fuchsia-400', prizes: [1500, 1000, 500] }
           ].map((ev) => (
-            <div key={ev.title} className="tf-stat" style={{ ['--k' as string]: 0, opacity: 1, transform: 'none' }}>
-              <div className="tf-stat-in px-5 sm:px-6 py-5 text-left">
-                <div className="flex items-center gap-2">
-                  <span className={`h-1.5 w-1.5 rotate-45 ${ev.dot}`} />
-                  <span className={`font-plex text-[11px] sm:text-xs font-semibold tracking-[0.3em] ${ev.accent}`}>{ev.title}</span>
+            <div key={ev.title} className="tf-stat h-full" style={{ ['--k' as string]: 0, opacity: 1, transform: 'none' }}>
+              {/* h-full: the dark panel fills the whole plate, so the gold edge layer never shows below it */}
+              <div className="tf-stat-in h-full px-5 sm:px-6 py-5 text-left">
+                <div className="flex items-center gap-2.5">
+                  <span className={`h-2 w-2 rotate-45 ${ev.dot}`} />
+                  <h3 className={`text-base sm:text-lg font-black uppercase tracking-wide whitespace-nowrap ${ev.accent}`} style={{ fontStretch: '110%' }}>{ev.title}</h3>
                 </div>
-                <p className="mt-1 text-[11px] text-slate-500">{ev.note}</p>
-                <div className="mt-4 space-y-2.5">
+                <p className="mt-1.5 text-sm text-slate-400">{ev.note}</p>
+                {/* Size steps down 1st → 2nd → 3rd so the top prize reads first */}
+                <div className="mt-5 space-y-3">
                   {ev.prizes.map((amt, i) => (
-                    <div key={i} className="flex items-baseline justify-between gap-3 border-b border-slate-800/80 pb-2 last:border-0 last:pb-0">
-                      <span className="font-plex text-[11px] font-bold tracking-[0.25em] text-slate-400">{['1ST', '2ND', '3RD'][i]}</span>
-                      <span className={`font-black leading-none tabular-nums ${i === 0 ? 'pz-gold' : 'text-white'}`} style={{ fontFamily: "'Archivo', sans-serif", fontStretch: '62%', fontSize: i === 0 ? '2rem' : '1.6rem' }}>
+                    <div key={i} className="flex items-baseline justify-between gap-3 border-b border-slate-800/80 pb-3 last:border-0 last:pb-0">
+                      <span className={`text-sm font-bold uppercase tracking-wider ${i === 0 ? 'text-amber-300' : 'text-slate-400'}`}>
+                        {['1st Prize', '2nd Prize', '3rd Prize'][i]}
+                      </span>
+                      <span
+                        className={`font-black leading-none tabular-nums ${['pz-gold', 'pz-silver', 'pz-bronze'][i]}`}
+                        style={{ fontFamily: "'Archivo', sans-serif", fontStretch: '62%', fontSize: ['clamp(2.4rem, 5vw, 3.1rem)', 'clamp(1.7rem, 3.4vw, 2.1rem)', 'clamp(1.35rem, 2.6vw, 1.6rem)'][i] }}
+                      >
                         {inr(amt)}
                       </span>
                     </div>
@@ -4878,26 +4978,94 @@ export default function App() {
     };
   }, [anyModal]);
 
-  const HERO_ICON: Record<string, React.ReactNode> = {
-    bumblebee: <Rocket className="w-full h-full" />,
-    megatron: <Presentation className="w-full h-full" />,
-    shockwave: <Wrench className="w-full h-full" />,
-    ratchet: <Gamepad2 className="w-full h-full" />
-  };
-
-  const trio = HEROES.filter((h) => h.kind !== 'main');
-  const bumblebee = HEROES.find((h) => h.kind === 'main')!;
-  const bt = THEME[bumblebee.theme];
+  // Events section order and sides: cards alternate right / left; each robot enters from its card's
+  // side, stands in the open half beside it, then leaves off the far edge.
+  const STAGE_ORDER: { key: string; card: 'left' | 'right' }[] = [
+    { key: 'bumblebee', card: 'right' },
+    { key: 'megatron', card: 'left' },
+    { key: 'shockwave', card: 'right' },
+    { key: 'ratchet', card: 'left' }
+  ];
+  const stageRef = useRef<StageState>({ key: null, u: 0, introId: 0, introKey: '', fromU: 0, standU: 0, enterU: 0, leaveKey: '', leaveU: 0 });
+  const stagedOnce = useRef(new Set<string>());   // leaders that already did their first-time transform
+  const EMPTY_STAGE = '__empty__';   // stage key that matches no leader: every robot hidden
+  useEffect(() => {
+    const st = stageRef.current;
+    if (activeHero || subPage || gate !== 'gone') { st.key = null; return; }
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const ease = (x: number) => (x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2);
+    let raf = 0;
+    let lastY = window.scrollY;
+    let prev: { key: string; from: number; exit: number } | null = null;   // leader on stage last update
+    const update = () => {
+      raf = 0;
+      const down = window.scrollY >= lastY;
+      lastY = window.scrollY;
+      // A fast scroll can skip a leader's walk-out entirely. Whoever loses the stage is told which
+      // edge to keep walking to (exit going down, back where it came from going up), so robots
+      // always leave the screen instead of fading out mid-floor.
+      const handOver = (next: string | null) => {
+        if (prev && prev.key !== next) { st.leaveKey = prev.key; st.leaveU = down ? prev.exit : prev.from; }
+        if (!next || next === EMPTY_STAGE) prev = null;
+      };
+      // Laptops and desktops only: on phones the cards fill the width, so there is no open stage half.
+      if (window.innerWidth < 1024) { st.key = null; prev = null; return; }
+      // Each row is taller than the screen and its card pins (sticky) for the extra height — the "stop".
+      // The row crossing the screen's middle line owns the stage:
+      //   row top   vh/2 → 0  : robot walks in from the card's side (off screen → stand)
+      //   pinned               : robot stands beside the card
+      //   row bottom vh → vh/2 : robot walks out the far side
+      // Neighbouring rows hand over exactly at the middle line, both robots off screen.
+      const vh = window.innerHeight;
+      const rows = [...document.querySelectorAll<HTMLElement>('[data-stage-row]')];
+      const row = rows.find((r) => { const b = r.getBoundingClientRect(); return b.top <= vh / 2 && b.bottom >= vh / 2; });
+      if (!row) {
+        // Outside the events: robots go home only while the main page's hero is on screen;
+        // anywhere else the stage stays empty.
+        st.key = window.scrollY < vh * 0.9 ? null : EMPTY_STAGE;
+        handOver(st.key);
+        return;
+      }
+      const r = row.getBoundingClientRect();
+      const key = row.dataset.stageRow!;
+      const card = row.dataset.card as 'left' | 'right';
+      const side = card === 'right' ? 1 : -1;     // the card's side of the screen
+      const from = side * 1.4, stand = -side * 0.5, exit = -side * 1.4;
+      const k = (x: number) => ease(Math.min(1, Math.max(0, x)));
+      const u = r.top > 0 ? from + (stand - from) * k(1 - r.top / (vh / 2))
+        : r.bottom < vh ? stand + (exit - stand) * k(1 - (r.bottom - vh / 2) / (vh / 2))
+        : stand;
+      const entering = r.bottom >= vh;
+      if (!stagedOnce.current.has(key) && !reduce && entering) {
+        stagedOnce.current.add(key);
+        st.introId += 1;
+        st.introKey = key;
+        st.fromU = from;
+        st.standU = stand;
+        audioFX.playTransform();
+      }
+      handOver(key);
+      if (prev?.key !== key) st.enterU = down ? from : exit;
+      prev = { key, from, exit };
+      st.key = key;
+      st.u = u;
+    };
+    const onScroll = () => { if (!raf) raf = requestAnimationFrame(update); };
+    update();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll);
+    return () => { cancelAnimationFrame(raf); window.removeEventListener('scroll', onScroll); window.removeEventListener('resize', onScroll); st.key = null; };
+  }, [activeHero, subPage, gate]);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-amber-400 selection:text-black relative overflow-x-hidden">
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-amber-400 selection:text-black relative overflow-x-clip">
 
       {/* Themed targeting-reticle cursor (recolors with the active faction) */}
       <style dangerouslySetInnerHTML={{ __html: buildCursorCss(CURSOR_HEX[active ? active.theme : 'amber']) }} />
 
       {/* 3D leaders background */}
       <style dangerouslySetInnerHTML={{ __html: MOTION_CSS }} />
-      {mount3D && <ThreeHeroBackground activeHero={activeHero} onSelectHero={goHero} intro={intro} paused={!entered} onReady={() => setSceneReady(true)} />}
+      {mount3D && <ThreeHeroBackground activeHero={activeHero} onSelectHero={goHero} intro={intro} paused={!entered} onReady={() => setSceneReady(true)} stage={stageRef} />}
 
       {/* Transformation HUD — only on the first visit to each hero */}
       {intro && active && intro.key === active.key && (
@@ -5266,94 +5434,78 @@ export default function App() {
               behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
             })} />
 
-            {/* Roster */}
-            <section id="roster" className="py-20 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto scroll-mt-24">
-              <div className="text-center max-w-3xl mx-auto mb-12 space-y-3">
-                <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-md text-xs font-mono border ${t.chip}`}>
-                  <Shield className="w-3.5 h-3.5" /> CHOOSE YOUR LEADER
-                </div>
-                <h2 className="text-3xl sm:text-5xl font-black tracking-tight uppercase">THE ALLSPARK ROSTER</h2>
-                <p className="text-slate-400 text-sm sm:text-base">
-                  Every event of OPTIMUS '27 is commanded by a Transformer. Enter a leader's arena to see their events.
-                </p>
-              </div>
+            {/* Events / roster: one row per leader. Cards alternate right / left; on laptops and desktops
+                the open half of each row is the 3D stage where that leader's robot stands (see stageRef). */}
+            <section id="roster" className="roster-sec relative scroll-mt-24">
+              {/* Continuity from the prize vault: dark steel fades away and the energon conduit carries on */}
+              <div className="pointer-events-none absolute inset-x-0 top-0 h-[40vh] bg-gradient-to-b from-[#03050b] via-[#03050b]/80 to-transparent" aria-hidden="true" />
+              <div className="pv-conduit absolute left-1/2 top-0 h-28" aria-hidden="true"><i /><i /></div>
+              {/* Stage lighting: darker edges so cards and robots read over the arena */}
+              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_50%_55%,transparent_40%,rgba(3,5,11,.55)_100%)]" aria-hidden="true" />
 
-              {/* BUMBLEBEE — main event, full width */}
-              <button
-                onClick={() => goHero(bumblebee.key)}
-                className={`group w-full text-left mb-6 relative overflow-hidden rounded-3xl bg-slate-900/90 border border-slate-800 ${onHover(bt.ring)} ${onHover(bt.glow)} p-6 sm:p-10 transition-all hover:-translate-y-1`}
-              >
-                <div className={`absolute -top-10 -right-10 w-56 h-56 rounded-full bg-gradient-to-br ${bt.grad} opacity-20 blur-3xl`} />
-                <div className="relative flex flex-col md:flex-row md:items-center gap-6 md:gap-10">
-                  <div className={`w-20 h-20 sm:w-28 sm:h-28 shrink-0 rounded-2xl bg-slate-950 border ${bt.ring} p-5 ${bt.text} group-hover:scale-110 transition-transform`}>
-                    {HERO_ICON[bumblebee.key]}
+              <div className="relative px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto pt-28 pb-10">
+                <div className="text-center max-w-3xl mx-auto mb-10 lg:mb-0 space-y-3">
+                  <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-md text-xs font-mono border ${t.chip}`}>
+                    <Shield className="w-3.5 h-3.5" /> CHOOSE YOUR LEADER
                   </div>
-                  <div className="flex-1 space-y-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className={`px-3 py-1 rounded-full text-[10px] font-mono font-bold tracking-widest border ${bt.chip}`}>
-                        ★ MAIN EVENT
-                      </span>
-                      <span className="px-3 py-1 rounded-full text-[10px] font-mono tracking-widest border border-slate-700 text-slate-400">
-                        {bumblebee.faction}
-                      </span>
-                    </div>
-                    <h3 className={`text-3xl sm:text-5xl font-black tracking-tight uppercase ${bt.text}`}>
-                      {bumblebee.name}
-                    </h3>
-                    <p className="text-slate-300 text-sm sm:text-base max-w-2xl">
-                      <span className="font-bold text-white">{bumblebee.tagline}.</span> {bumblebee.lore}
-                    </p>
-                  </div>
-                  <div className="shrink-0 flex md:flex-col items-center md:items-end gap-3">
-                    <span className={`text-xs font-mono px-3 py-1 rounded bg-slate-800 ${bt.text}`}>
-                      {bumblebee.events.length} EVENT
-                    </span>
-                    {bumblebee.prizePool && (
-                      <span className={`text-xs font-mono font-bold px-3 py-1 rounded bg-slate-800 ${bt.text}`}>
-                        {inr(bumblebee.prizePool)} PRIZE POOL
-                      </span>
-                    )}
-                    <span className={`inline-flex items-center gap-2 px-5 py-3 rounded-xl ${bt.btn} text-xs font-black tracking-widest`}>
-                      ENTER ARENA <ChevronRight className="w-4 h-4" />
-                    </span>
-                  </div>
+                  <h2 className="text-3xl sm:text-5xl font-black tracking-tight uppercase">THE ALLSPARK ROSTER</h2>
+                  <p className="text-slate-300 text-sm sm:text-base">
+                    Every event of OPTIMUS '27 is commanded by a Transformer. Scroll to meet them, or enter a leader's arena to see their events.
+                  </p>
                 </div>
-              </button>
 
-              {/* The other three — block next to next */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-                {trio.map((h) => {
-                  const ht = THEME[h.theme];
-                  return (
-                    <button
-                      key={h.key}
-                      onClick={() => goHero(h.key)}
-                      className={`group text-left relative overflow-hidden rounded-3xl bg-slate-900/90 border border-slate-800 ${onHover(ht.ring)} ${onHover(ht.glow)} p-6 transition-all hover:-translate-y-2 flex flex-col justify-between min-h-[300px]`}
-                    >
-                      <div className={`absolute -top-12 -right-12 w-40 h-40 rounded-full bg-gradient-to-br ${ht.grad} opacity-10 blur-2xl group-hover:opacity-25 transition-opacity`} />
-                      <div className="relative space-y-4">
-                        <div className={`w-16 h-16 rounded-2xl bg-slate-950 border ${ht.ring} p-4 ${ht.text} group-hover:scale-110 transition-transform`}>
-                          {HERO_ICON[h.key]}
+                <div className="space-y-6 lg:space-y-0">
+                  {STAGE_ORDER.map(({ key, card }, idx) => {
+                    const h = heroByKey(key)!;
+                    const ht = THEME[h.theme];
+                    const hex = CURSOR_HEX[h.theme];
+                    return (
+                      <div key={key} data-stage-row={key} data-card={card} className="lg:h-[175vh] relative">
+                        {/* Pinned for the row's extra height: one scroll "stop" per leader */}
+                        <div className={`lg:sticky lg:top-0 lg:h-screen lg:pt-20 flex items-center ${card === 'right' ? 'lg:justify-end' : 'lg:justify-start'}`}>
+                        <button
+                          onClick={() => goHero(h.key)}
+                          className={`group w-full lg:w-[min(52%,760px)] text-left relative overflow-hidden rounded-3xl bg-slate-950/85 border border-slate-800 ${onHover(ht.ring)} ${onHover(ht.glow)} p-6 sm:p-8 lg:p-10 transition-all hover:-translate-y-1`}
+                        >
+                          <div className={`absolute -top-12 ${card === 'right' ? '-right-12' : '-left-12'} w-48 h-48 rounded-full bg-gradient-to-br ${ht.grad} opacity-15 blur-3xl`} />
+                          <div className="relative space-y-3">
+                            <span className="inline-block px-3 py-1 rounded-full text-[10px] font-mono tracking-widest border border-slate-700 text-slate-400">
+                              {h.faction} · {h.role}
+                            </span>
+                            {/* Event number beside the name (01 · 02 …), in the leader's colour */}
+                            <div className="flex items-start gap-3 sm:gap-4">
+                              <span className={`font-mono text-sm sm:text-base font-bold tracking-wider pt-1 sm:pt-1.5 ${ht.text} opacity-80`}>
+                                {String(idx + 1).padStart(2, '0')}
+                              </span>
+                              <h3 className={`text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight uppercase ${ht.text}`}>{h.name}</h3>
+                            </div>
+                          </div>
+                          <p className="relative mt-5 text-slate-300 text-sm sm:text-base lg:text-lg leading-relaxed">
+                            <span className="font-bold text-white">{h.tagline}.</span> {h.lore}
+                          </p>
+                          <div className="relative mt-6 pt-5 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-3">
+                            {/* Prize pool as a big glowing figure; workshops (no prizes) show what you gain instead */}
+                            <div className="flex items-baseline gap-2.5">
+                              <span
+                                className={`text-3xl sm:text-4xl font-black tracking-tight leading-none ${ht.text}`}
+                                style={{ fontStretch: '110%', textShadow: `0 0 22px ${hex}66` }}
+                              >
+                                {h.prizePool ? inr(h.prizePool) : 'HANDS-ON'}
+                              </span>
+                              <span className="font-mono text-[10px] sm:text-[11px] font-bold tracking-[0.25em] text-slate-400 leading-tight">
+                                {h.prizePool ? <>PRIZE<br />POOL</> : <>EXPERIENCE<br />+ CERTIFICATE</>}
+                              </span>
+                            </div>
+                            <span className={`inline-flex items-center gap-2 px-6 py-3.5 rounded-xl ${ht.btn} text-xs lg:text-sm font-black tracking-widest`}>
+                              ENTER ARENA <ChevronRight className="w-4 h-4" />
+                            </span>
+                          </div>
+                        </button>
                         </div>
-                        <span className="block text-[10px] font-mono tracking-widest text-slate-400">{h.faction} · {h.role}</span>
-                        <h3 className={`text-xl xl:text-2xl font-black tracking-tight uppercase ${ht.hoverText} transition-colors`}>
-                          {h.name}
-                        </h3>
-                        <p className="text-slate-300 text-sm leading-relaxed">
-                          <span className="font-bold text-white">{h.tagline}.</span> {h.lore}
-                        </p>
                       </div>
-                      <div className="relative pt-6 mt-6 border-t border-slate-800/80 flex items-center justify-between">
-                        <span className={`text-xs font-mono ${ht.text}`}>
-                          {h.events.length} EVENTS{h.prizePool ? ` · ${inr(h.prizePool)} PRIZE POOL` : ''}
-                        </span>
-                        <span className="p-2.5 rounded-xl bg-slate-800 text-slate-200 group-hover:bg-slate-700 transition-colors">
-                          <ChevronRight className="w-5 h-5" />
-                        </span>
-                      </div>
-                    </button>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             </section>
 
