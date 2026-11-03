@@ -6067,7 +6067,7 @@ export default function App() {
             aria-modal="true"
             aria-label={selectedEvent.title}
             onClick={(e) => e.stopPropagation()}
-            className={`max-w-xl w-full rounded-3xl bg-slate-900 border ${t.ring} ${t.glow} p-6 sm:p-8 space-y-6 relative`}
+            className={`max-w-xl w-full max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain rounded-3xl bg-slate-900 border ${t.ring} ${t.glow} p-6 sm:p-8 space-y-6 relative`}
           >
             <button onClick={() => setSelectedEvent(null)} className="absolute top-6 right-6 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white">
               <X className="w-5 h-5" />
