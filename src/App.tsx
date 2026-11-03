@@ -5113,6 +5113,8 @@ export default function App() {
   const passValid = pass.pickDay ? `${FEST_DAYS[formData.day]} ONLY` : pass.valid;
 
   const active = heroByKey(activeHero);
+  // Theme of the register popup's frame: the leader page's colours on the "get your ID first" screen.
+  const idT = !profile && !registerSuccess && active ? THEME[active.theme] : pt;
   // Content waits for the armour to lock in on a first visit; otherwise it just eases in.
   const introPlaying = !!intro && !!active && intro.key === active.key;
   const introDelay = (extra: number) => `${(introPlaying ? 3.6 : 0.05) + extra}s`;
@@ -6133,6 +6135,8 @@ export default function App() {
       )}
 
       {/* ===================== REGISTER MODAL ===================== */}
+      {/* Before an Optimus ID exists, the "get your ID first" screen wears the colours of the leader
+          page it was opened from (Megatron red, Shockwave violet …); the pass form keeps its pass colour. */}
       {isRegisterOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85" onClick={() => { setIsRegisterOpen(false); setRegisterSuccess(false); }}>
           <div
@@ -6140,7 +6144,7 @@ export default function App() {
             aria-modal="true"
             aria-label="Registration"
             onClick={(e) => e.stopPropagation()}
-            className={`max-w-lg w-full rounded-3xl bg-slate-900 border ${pt.ring} ${pt.glow} p-6 sm:p-8 space-y-6 relative max-h-[90vh] overflow-y-auto`}
+            className={`max-w-lg w-full rounded-3xl bg-slate-900 border ${idT.ring} ${idT.glow} p-6 sm:p-8 space-y-6 relative max-h-[90vh] overflow-y-auto`}
           >
             <button onClick={() => { setIsRegisterOpen(false); setRegisterSuccess(false); }} className="absolute top-6 right-6 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white">
               <X className="w-5 h-5" />
@@ -6148,8 +6152,8 @@ export default function App() {
 
             {!profile && !registerSuccess ? (
               <div className="text-center space-y-5 py-4">
-                <div className="mx-auto w-14 h-14 rounded-2xl bg-amber-500/15 border border-amber-500/40 flex items-center justify-center">
-                  <QrCode className="w-7 h-7 text-amber-300" />
+                <div className={`mx-auto w-14 h-14 rounded-2xl border flex items-center justify-center ${idT.chip}`}>
+                  <QrCode className="w-7 h-7" />
                 </div>
                 <div className="space-y-2">
                   <h3 className="text-2xl font-black uppercase">Get your Optimus ID first</h3>
@@ -6157,7 +6161,7 @@ export default function App() {
                     Registration, team entry and certificates all use your Optimus ID. Get yours in a minute, then come back to register.
                   </p>
                 </div>
-                <button onClick={goMyPass} className={`w-full py-4 rounded-xl ${pt.btn} text-xs font-black tracking-widest`}>
+                <button onClick={goMyPass} className={`w-full py-4 rounded-xl ${idT.btn} text-xs font-black tracking-widest`}>
                   GET OPTIMUS ID
                 </button>
               </div>
