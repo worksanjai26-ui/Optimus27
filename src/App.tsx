@@ -510,6 +510,37 @@ export const HEROES: Hero[] = [
 
 const heroByKey = (k: string | null) => HEROES.find((h) => h.key === k) || null;
 
+// Header jumps to a section: an eased glide (slow start, steady middle, soft landing) instead of the
+// browser's smooth scroll, which lurches over a page this long. Duration grows with distance, the target
+// is re-measured every frame (sections can resize on the way), and any wheel / touch / key input hands
+// control straight back to the user.
+let glideRaf = 0;
+const glideTo = (el: HTMLElement | null) => {
+  if (!el) return;
+  cancelAnimationFrame(glideRaf);
+  const targetY = () => el.getBoundingClientRect().top + window.scrollY - (parseFloat(getComputedStyle(el).scrollMarginTop) || 0);
+  const jump = (y: number) => window.scrollTo({ top: y, behavior: 'instant' as ScrollBehavior });
+  const start = window.scrollY;
+  const dist = targetY() - start;
+  if (Math.abs(dist) < 2) return;
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { jump(targetY()); return; }
+  const dur = Math.min(1800, 650 + Math.abs(dist) * 0.11);
+  const ease = (x: number) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+  const stop = () => {
+    cancelAnimationFrame(glideRaf);
+    ['wheel', 'touchstart', 'keydown'].forEach((t) => window.removeEventListener(t, stop));
+  };
+  ['wheel', 'touchstart', 'keydown'].forEach((t) => window.addEventListener(t, stop, { passive: true }));
+  const t0 = performance.now();
+  const step = (now: number) => {
+    const k = Math.min(1, (now - t0) / dur);
+    jump(start + (targetY() - start) * ease(k));
+    if (k < 1) glideRaf = requestAnimationFrame(step);
+    else stop();
+  };
+  glideRaf = requestAnimationFrame(step);
+};
+
 type ThemeTok = (typeof THEME)[ThemeKey];
 // Theme colour as hex, for glows (inline styles can't use Tailwind classes).
 const hexOf = (t: ThemeTok) => CURSOR_HEX[(Object.keys(THEME) as ThemeKey[]).find((k) => THEME[k] === t) ?? 'amber'];
@@ -4620,7 +4651,7 @@ function TechnoFestSection() {
               <div className="tf-stat-in px-4 py-4 sm:py-5 text-left">
                 <div className="flex items-center gap-2">
                   <span className="h-1.5 w-1.5 rotate-45 bg-cyan-400" />
-                  <span className="font-plex text-[10px] sm:text-[11px] font-semibold tracking-[0.3em] text-cyan-300/90">{f.label}</span>
+                  <span className="text-xs sm:text-sm font-extrabold uppercase tracking-[0.16em] text-cyan-200" style={{ fontFamily: "'Archivo', sans-serif", fontStretch: '112%', textShadow: '0 0 12px rgba(34,211,238,.45)' }}>{f.label}</span>
                 </div>
                 <div className="mt-2 flex items-baseline gap-2">
                   <span className="font-black leading-none text-white text-2xl sm:text-4xl whitespace-nowrap" style={{ fontFamily: "'Archivo', sans-serif", fontStretch: '62%', wordSpacing: '0.15em' }}>
@@ -5069,7 +5100,7 @@ export default function App() {
     setActiveHero(null);
     leaveSubPage();
     setMobileMenuOpen(false);
-    setTimeout(() => document.getElementById('passes')?.scrollIntoView({ behavior: 'smooth' }), 80);
+    setTimeout(() => glideTo(document.getElementById('passes')), 80);
   }, []);
 
   // Leaders list sits on the home page too, so leave any hero page first (phone action bar).
@@ -5077,7 +5108,7 @@ export default function App() {
     setActiveHero(null);
     leaveSubPage();
     setMobileMenuOpen(false);
-    setTimeout(() => document.getElementById('roster')?.scrollIntoView({ behavior: 'smooth' }), 80);
+    setTimeout(() => glideTo(document.getElementById('roster')), 80);
   }, []);
 
   const toggleSound = () => {
