@@ -510,12 +510,12 @@ export const HEROES: Hero[] = [
 
 const heroByKey = (k: string | null) => HEROES.find((h) => h.key === k) || null;
 
-// Header jumps to a section: an eased glide (slow start, steady middle, soft landing) instead of the
-// browser's smooth scroll, which lurches over a page this long. Duration grows with distance, the target
-// is re-measured every frame (sections can resize on the way), and any wheel / touch / key input hands
-// control straight back to the user.
+// Header jumps to a section: a quick eased glide (brisk start, soft landing) instead of the browser's
+// smooth scroll, which lurches over a page this long. It takes under a second even across the whole
+// page, the 3D scene holds its frame meanwhile (all the frame time goes to scrolling), the target is
+// re-measured every frame, and any wheel / touch / key input hands control straight back to the user.
 let glideRaf = 0;
-const glideTo = (el: HTMLElement | null, offset?: number) => {
+const glideTo = (el: HTMLElement | null, offset?: number, holdScene = true) => {
   if (!el) return;
   cancelAnimationFrame(glideRaf);
   const targetY = () => el.getBoundingClientRect().top + window.scrollY - (offset ?? (parseFloat(getComputedStyle(el).scrollMarginTop) || 0));
@@ -524,13 +524,15 @@ const glideTo = (el: HTMLElement | null, offset?: number) => {
   const dist = targetY() - start;
   if (Math.abs(dist) < 2) return;
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { jump(targetY()); return; }
-  const dur = Math.min(1800, 650 + Math.abs(dist) * 0.11);
+  const dur = Math.min(950, 420 + Math.abs(dist) * 0.06);
   const ease = (x: number) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
   const stop = () => {
+    sceneGate.glide = false;
     cancelAnimationFrame(glideRaf);
     ['wheel', 'touchstart', 'keydown'].forEach((t) => window.removeEventListener(t, stop));
   };
   ['wheel', 'touchstart', 'keydown'].forEach((t) => window.addEventListener(t, stop, { passive: true }));
+  sceneGate.glide = holdScene;
   const t0 = performance.now();
   const step = (now: number) => {
     const k = Math.min(1, (now - t0) / dur);
@@ -1006,7 +1008,7 @@ if (typeof document !== 'undefined') document.documentElement.classList.add(`tie
 // Set while opaque page content hides the whole 3D scene (the techno-fest + prize sections filling
 // the screen, or the certificate page's backdrop). The render loop idles then, which frees the
 // GPU / CPU for scrolling on phones and integrated-graphics laptops.
-export const sceneGate = { scroll: false, page: false };
+export const sceneGate = { scroll: false, page: false, glide: false };
 
 export type StageState = {
   key: string | null;
@@ -2957,7 +2959,7 @@ const ThreeHeroBackground = ({
       // incomplete-framebuffer errors from the post-processing passes.
       if (!renderer.domElement.width || !renderer.domElement.height) return;
       // Behind the opaque entry screen: render a short warm-up, then idle.
-      if ((pausedRef.current || sceneGate.scroll || sceneGate.page) && warmFrames > 45) { clock.getDelta(); perfAcc = perfFrames = 0; return; }
+      if ((pausedRef.current || sceneGate.scroll || sceneGate.page || sceneGate.glide) && warmFrames > 45) { clock.getDelta(); perfAcc = perfFrames = 0; return; }
       // Scrolled down into the page content the scene is mostly covered: draw at half rate.
       // Full rate only while a leader is actually on the events stage.
       const onStage = !!stage?.current.key && !!records[stage.current.key];
@@ -3608,14 +3610,29 @@ const MOTION_CSS = `
   -webkit-mask-image: radial-gradient(ellipse 70% 65% at 50% 45%, #000 30%, transparent 80%); mask-image: radial-gradient(ellipse 70% 65% at 50% 45%, #000 30%, transparent 80%); }
 .cert-beam { transform: translateX(-50%); clip-path: polygon(44% 100%, 56% 100%, 92% 0, 8% 0);
   background: linear-gradient(0deg, rgba(34,211,238,.20), rgba(34,211,238,.06) 55%, transparent); }
-.cert-holo { transform: translate(-50%, -50%) perspective(1400px) rotateX(16deg); opacity: .55;
-  filter: drop-shadow(0 0 14px rgba(34,211,238,.35)); animation: certFlicker 6s steps(1) infinite; }
-.cert-scan { position: absolute; left: 1.5%; right: 1.5%; top: 0; height: 18%;
-  background: linear-gradient(180deg, transparent, rgba(34,211,238,.07) 70%, rgba(165,243,252,.22) 100%);
-  border-bottom: 1px solid rgba(165,243,252,.4); animation: certScan 4.5s cubic-bezier(.45,0,.55,1) infinite; will-change: transform; }
-@keyframes certScan { 0% { transform: translateY(-10%); opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { transform: translateY(460%); opacity: 0; } }
-@keyframes certFlicker { 0%, 100% { opacity: .55; } 47% { opacity: .55; } 48% { opacity: .35; } 49% { opacity: .55; } 83% { opacity: .45; } 84% { opacity: .55; } }
-@media (prefers-reduced-motion: reduce) { .cert-holo, .cert-scan { animation: none; } }
+/* The certificate sheet: notched 1px cyan-to-gold border (outer layer) around a dark glass plate */
+.cert-plate { padding: 1px; clip-path: polygon(26px 0, calc(100% - 26px) 0, 100% 26px, 100% calc(100% - 26px), calc(100% - 26px) 100%, 26px 100%, 0 calc(100% - 26px), 0 26px);
+  background: linear-gradient(135deg, rgba(34,211,238,.85), rgba(250,204,21,.55) 50%, rgba(34,211,238,.85));
+  transform-origin: 50% 50%; animation: certUnfold 1.05s cubic-bezier(.65,0,.25,1) both; }
+.cert-plate-in { clip-path: polygon(25px 0, calc(100% - 25px) 0, 100% 25px, 100% calc(100% - 25px), calc(100% - 25px) 100%, 25px 100%, 0 calc(100% - 25px), 0 25px);
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 30%, rgba(34,211,238,.10), transparent 70%),
+    linear-gradient(180deg, rgba(8,20,40,.94), rgba(3,8,20,.96)); }
+.cert-plate-in::before { content: ''; position: absolute; inset: 22px; border: 1px dashed rgba(34,211,238,.28); pointer-events: none; }
+/* Unfold: a bright line opens out from the centre, then the sheet opens up and down */
+@keyframes certUnfold {
+  0% { transform: scale(.02, .006); opacity: 0; filter: brightness(2.2); }
+  12% { opacity: 1; }
+  48% { transform: scale(1, .006); filter: brightness(2.2); }
+  100% { transform: scale(1, 1); filter: brightness(1); }
+}
+.cert-in { animation: certIn .6s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes certIn { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+.cert-scan { position: absolute; left: 0; right: 0; top: 0; height: 22%; pointer-events: none;
+  background: linear-gradient(180deg, transparent, rgba(34,211,238,.05) 70%, rgba(165,243,252,.16) 100%);
+  border-bottom: 1px solid rgba(165,243,252,.3); animation: certScan 5s cubic-bezier(.45,0,.55,1) 1.2s infinite both; will-change: transform; }
+@keyframes certScan { 0% { transform: translateY(-100%); opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { transform: translateY(460%); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .cert-plate, .cert-in, .cert-scan { animation: none; } }
 .cert-corner::after { content: ''; position: absolute; inset: 7px; border: inherit; border-color: rgba(34,211,238,.18); }
 .pass-deck { display: grid; grid-template-columns: 1fr; gap: 1.25rem; }
 @media (min-width: 768px) { .pass-deck { grid-template-columns: 1fr 1fr; } }
@@ -3832,7 +3849,8 @@ const MOTION_CSS = `
 .tier-low .tf-hz-core { box-shadow: 0 0 10px 3px rgba(250,204,21,.7); }
 .tier-low .pass-card { filter: none !important; transition: transform .4s cubic-bezier(.2,.8,.2,1), opacity .3s ease; }
 .tier-low .pass-deck:not(.is-rest) .pass-card:not(.pass-on) { opacity: .72; }
-.tier-low .cert-holo, .tier-mid .cert-holo { filter: none; animation: none; }
+.tier-low .cert-plate { animation-name: certUnfoldLite; }
+@keyframes certUnfoldLite { 0% { transform: scale(.02, .006); opacity: 0; } 12% { opacity: 1; } 48% { transform: scale(1, .006); } 100% { transform: scale(1, 1); } }
 .tier-low .backdrop-blur-sm { -webkit-backdrop-filter: none; backdrop-filter: none; }
 .tier-low .pv-vault, .tier-low .cert-scan { animation: none; }
 .tier-low .prize-trophy, .tier-mid .prize-trophy { filter: none; }
@@ -4094,9 +4112,9 @@ const DemoNote = ({ children }: { children: React.ReactNode }) => (
 
 type CertResult = { eventId: string; title: string; arena: string; url: string; file: string };
 
-// Certificate page backdrop — "Autobot records": a cyan holographic certificate projected up from a
-// console beam over a blueprint grid, with a scan line sweeping the document, the Autobot crest as its
-// seal and HUD corner brackets. Fixed behind the page content (and over the 3D scene); transform-only motion.
+// Certificate page backdrop — "Autobot records": a blueprint grid, a projector beam rising from below
+// and HUD corner brackets. Fixed behind the page content (and over the 3D scene). The certificate itself
+// is CertFrame, which holds the page content.
 function CertBackdrop() {
   useEffect(() => {
     sceneGate.page = true;
@@ -4108,37 +4126,6 @@ function CertBackdrop() {
       <div className="cert-grid absolute inset-0" />
       {/* Projector beam rising from the console below the form */}
       <div className="cert-beam absolute left-1/2 bottom-0 w-[min(140vw,1200px)] h-[78%]" />
-      {/* The hologram: an A4-landscape certificate drawn in light, tilted back like a projection */}
-      <div className="cert-holo absolute left-1/2 top-[48%] w-[min(88vw,940px)]">
-        <svg viewBox="0 0 1414 1000" className="block w-full h-auto" fill="none">
-          <path d="M60 20 H1354 L1394 60 V940 L1354 980 H60 L20 940 V60 Z" stroke="rgba(34,211,238,.45)" strokeWidth="2.5" />
-          <path d="M84 48 H1330 L1366 84 V916 L1330 952 H84 L48 916 V84 Z" stroke="rgba(34,211,238,.22)" strokeWidth="1.2" strokeDasharray="10 8" />
-          {/* corner filigree */}
-          {[[48, 48, 1, 1], [1366, 48, -1, 1], [48, 952, 1, -1], [1366, 952, -1, -1]].map(([x, y, sx, sy], k) => (
-            <path key={k} d={`M${x + sx * 10} ${y + sy * 90} V${y + sy * 10} H${x + sx * 90} M${x + sx * 30} ${y + sy * 60} L${x + sx * 60} ${y + sy * 30}`}
-              stroke="rgba(250,204,21,.45)" strokeWidth="2" />
-          ))}
-          {/* title, name line and body text, as light bars */}
-          <rect x="457" y="150" width="500" height="34" rx="4" fill="rgba(34,211,238,.20)" />
-          <rect x="557" y="208" width="300" height="12" rx="3" fill="rgba(34,211,238,.14)" />
-          <path d="M387 380 H1027" stroke="rgba(250,204,21,.45)" strokeWidth="2" />
-          <rect x="487" y="330" width="440" height="30" rx="4" fill="rgba(250,204,21,.16)" />
-          {[440, 476, 512].map((y, k) => (
-            <rect key={y} x={337 + k * 30} y={y} width={740 - k * 60} height="10" rx="3" fill="rgba(34,211,238,.12)" />
-          ))}
-          {/* signatures */}
-          <path d="M180 820 H460 M954 820 H1234" stroke="rgba(34,211,238,.4)" strokeWidth="1.5" />
-          <path d="M210 800 C250 760 290 830 330 790 S410 780 430 800" stroke="rgba(34,211,238,.35)" strokeWidth="2" />
-          <path d="M990 800 C1030 770 1060 820 1110 790 S1190 785 1200 805" stroke="rgba(34,211,238,.35)" strokeWidth="2" />
-          <rect x="250" y="840" width="140" height="10" rx="3" fill="rgba(34,211,238,.12)" />
-          <rect x="1024" y="840" width="140" height="10" rx="3" fill="rgba(34,211,238,.12)" />
-          {/* seal with the Autobot crest */}
-          <circle cx="707" cy="760" r="104" stroke="rgba(250,204,21,.45)" strokeWidth="2" />
-          <circle cx="707" cy="760" r="90" stroke="rgba(250,204,21,.25)" strokeWidth="6" strokeDasharray="3 7" />
-          <image href={BASE + 'assets/logo-hd.webp'} x="637" y="690" width="140" height="140" opacity=".5" />
-        </svg>
-        <span className="cert-scan" />
-      </div>
       {/* HUD corner brackets */}
       {[
         'top-24 left-4 sm:left-8 border-t-2 border-l-2',
@@ -4149,6 +4136,42 @@ function CertBackdrop() {
         <span key={c} className={`cert-corner absolute w-12 h-12 sm:w-20 sm:h-20 border-cyan-400/45 ${c}`} />
       ))}
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_85%_70%_at_50%_45%,transparent_40%,rgba(3,5,11,.75)_100%)]" />
+    </div>
+  );
+}
+
+// The page content sits inside a holographic certificate: notched cyan border, an inner dashed rule,
+// gold corner filigree, a scan line, and a signature / seal row at the foot. On entry it unfolds from
+// its centre — a bright line opens sideways, then the sheet opens up and down — and the content
+// rises in after it.
+function CertFrame({ children }: { children: React.ReactNode }) {
+  const signature = (d: string, role: string) => (
+    <div className="flex-1 min-w-0 max-w-[13rem] text-center">
+      <svg viewBox="0 0 200 40" className="w-full h-8 sm:h-10" fill="none" aria-hidden="true">
+        <path d={d} stroke="rgba(165,243,252,.75)" strokeWidth="1.8" strokeLinecap="round" />
+      </svg>
+      <div className="h-px bg-cyan-300/50" />
+      <p className="mt-1.5 text-[9px] sm:text-[10px] font-mono font-bold tracking-[0.25em] text-cyan-200/80">{role}</p>
+    </div>
+  );
+  return (
+    <div className="cert-plate relative mt-6">
+      <div className="cert-plate-in relative overflow-hidden px-5 sm:px-12 lg:px-16 pt-10 sm:pt-12 pb-8 sm:pb-10">
+        {['top-3 left-3 border-t-2 border-l-2', 'top-3 right-3 border-t-2 border-r-2', 'bottom-3 left-3 border-b-2 border-l-2', 'bottom-3 right-3 border-b-2 border-r-2'].map((c) => (
+          <span key={c} className={`absolute w-8 h-8 sm:w-12 sm:h-12 border-amber-400/70 pointer-events-none ${c}`} aria-hidden="true" />
+        ))}
+        <span className="cert-scan" aria-hidden="true" />
+        <div className="relative">{children}</div>
+        {/* Signatures and the seal, like the foot of a printed certificate */}
+        <div className="cert-in relative mt-8 sm:mt-10 flex items-end justify-between gap-3 sm:gap-8" style={{ animationDelay: '1.35s' }} aria-hidden="true">
+          {signature('M10 30 C30 8 45 34 62 18 S92 10 104 24 S140 28 150 14 S180 20 190 26', 'FEST CONVENOR')}
+          <div className="relative shrink-0 w-20 h-20 sm:w-24 sm:h-24 rounded-full border-2 border-amber-400/70 flex items-center justify-center">
+            <span className="absolute inset-1.5 rounded-full border border-dashed border-amber-300/50" />
+            <img src={BASE + 'assets/logo-hd.webp'} alt="" className="w-11 h-11 sm:w-14 sm:h-14 object-contain opacity-80" />
+          </div>
+          {signature('M12 26 C26 12 40 30 56 20 S80 6 98 22 C110 32 128 10 146 20 S176 28 188 16', 'PRINCIPAL · KPRIET')}
+        </div>
+      </div>
     </div>
   );
 }
@@ -4272,19 +4295,20 @@ function CertificatePage({ onHome }: { onHome: () => void }) {
         <ArrowLeft className="w-4 h-4" /> BACK TO HOME
       </button>
 
-      <div className="text-center max-w-2xl mx-auto mt-8 mb-10 space-y-3">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md text-xs font-mono font-bold border bg-amber-500/80 text-white border-amber-300">
+      <CertFrame>
+      <div className="text-center max-w-2xl mx-auto mb-8 sm:mb-10 space-y-3">
+        <div className="cert-in inline-flex items-center gap-2 px-3 py-1 rounded-md text-xs font-mono font-bold border bg-amber-500/80 text-white border-amber-300" style={{ animationDelay: '.85s' }}>
           <Award className="w-3.5 h-3.5" /> PARTICIPATION CERTIFICATE
         </div>
-        <h1 className="text-4xl sm:text-6xl font-black tracking-tight uppercase bg-clip-text text-transparent bg-gradient-to-r from-white via-cyan-200 to-cyan-400">
+        <h1 className="cert-in text-4xl sm:text-6xl font-black tracking-tight uppercase bg-clip-text text-transparent bg-gradient-to-r from-white via-cyan-200 to-cyan-400" style={{ animationDelay: '.95s' }}>
           Get Your Certificate
         </h1>
-        <p className="text-slate-300 text-sm sm:text-base">
+        <p className="cert-in text-slate-300 text-sm sm:text-base" style={{ animationDelay: '1.05s' }}>
           Enter your Optimus ID and your name in capital letters. You get one certificate for every event your attendance was recorded at.
         </p>
       </div>
 
-      <form onSubmit={submit} noValidate className="max-w-xl mx-auto rounded-3xl bg-slate-950/90 border border-cyan-400/30 shadow-[0_30px_80px_-30px_rgba(34,211,238,.35)] backdrop-blur-sm p-6 sm:p-8 space-y-5">
+      <form onSubmit={submit} noValidate className="cert-in max-w-xl mx-auto rounded-3xl bg-slate-950/85 border border-cyan-400/30 shadow-[0_30px_80px_-30px_rgba(34,211,238,.35)] p-6 sm:p-8 space-y-5" style={{ animationDelay: '1.15s' }}>
         <div>
           <label htmlFor="cert-id" className="text-xs font-mono font-bold tracking-widest text-slate-400 block mb-1.5">OPTIMUS ID</label>
           <input
@@ -4334,6 +4358,7 @@ function CertificatePage({ onHome }: { onHome: () => void }) {
           </div>
         )}
       </form>
+      </CertFrame>
     </section>
   );
 }
@@ -5700,7 +5725,7 @@ export default function App() {
                 {/* Dateline: fine gold rules either side of the fest dates */}
                 <div className="sm:absolute sm:inset-x-0 sm:top-[calc(37.6vh-5rem)] sm:-translate-y-1/2 flex items-center justify-center gap-3 sm:gap-4">
                   <span className="h-px w-10 sm:w-20 bg-gradient-to-r from-transparent to-amber-400/80" aria-hidden="true" />
-                  <span className="font-plex font-semibold text-amber-300 text-[11px] sm:text-[13px] tracking-[0.35em] whitespace-nowrap">
+                  <span className="font-plex font-semibold text-amber-300 text-[12.5px] sm:text-[15px] tracking-[0.33em] whitespace-nowrap">
                     <span className="text-amber-400/80" aria-hidden="true">◆ </span>FEB 4 – 5 · 2027<span className="text-amber-400/80" aria-hidden="true"> ◆</span>
                   </span>
                   <span className="h-px w-10 sm:w-20 bg-gradient-to-l from-transparent to-amber-400/80" aria-hidden="true" />
@@ -5736,7 +5761,8 @@ export default function App() {
                         // beside Bumblebee on the events stage); on phones, its card just under the header.
                         e.preventDefault();
                         const row = document.querySelector<HTMLElement>('[data-stage-row="bumblebee"]');
-                        if (window.innerWidth >= 1024) glideTo(row, 0);
+                        // (the scene keeps drawing so Bumblebee's drive-in is seen from its start)
+                        if (window.innerWidth >= 1024) glideTo(row, 0, false);
                         else glideTo(row?.querySelector('button') ?? row, 88);
                       }}
                       className="flex-1 min-w-0 sm:flex-none flex items-center justify-center px-2 sm:px-10 py-3 sm:py-4 rounded-xl bg-slate-900/90 border border-slate-700/80 hover:bg-slate-800 text-slate-200 text-[11px] sm:text-xs font-mono font-bold tracking-wide sm:tracking-widest transition-all whitespace-nowrap"
