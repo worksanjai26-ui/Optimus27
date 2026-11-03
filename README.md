@@ -154,37 +154,36 @@ Drop glTF models into `public/models/` as `bumblebee-car.glb`, `megatron-car.glb
 
 ## Admin panel
 
-Open `/#admin` (or `/admin` on the dev server). Sign-in is enabled by setting the
-SHA-256 hash of the admin password:
+Open `/#admin` (or `/admin` on the dev server) and **sign in with Google**. Only the
+organiser accounts listed in `firestore.rules` / `functions/index.js` / `src/backend.ts`
+get in, and the server checks that again for every request; there is no password in
+the site. It lists registrations (search, filter, delete), participants, announcements
+and event edits, and exports everything to **Excel (.xlsx)** or CSV.
 
-```bash
-# .env.local (dev)  — or a repository variable for the deploy
-VITE_ADMIN_PASSWORD_SHA256=<sha256 of your password>
-```
+The panel needs the Firebase backend: see **[README-FIREBASE.md](README-FIREBASE.md)**.
+The visitor counter uses the public [Abacus](https://abacus.jasoncameron.dev) counter
+API; dev-server visits are counted separately.
 
-> **Limitations:** this is a frontend-only admin. Registrations, edits and
-> announcements are stored in the **browser's localStorage**, so the panel only
-> shows data from the same browser, and the password hash ships in the public
-> bundle. Replace the functions in `src/adminData.ts` with real API calls before
-> relying on it for live registrations. The visitor counter uses the public
-> [Abacus](https://abacus.jasoncameron.dev) counter API; dev-server visits are
-> counted separately.
+## Optimus IDs, sign-in and registration
 
-## Optimus ID demo
+With the Firebase backend configured, participants **sign in with Google**, get an
+Optimus ID issued by the server, and a signed-in team leader registers a team by adding
+members' Optimus IDs (the server checks each one, enforces the team-size limit and
+allows one team per person per event). Registrations are stored in Firestore and copied
+to a private Google Sheet for the organisers. All of that is described in
+[README-FIREBASE.md](README-FIREBASE.md).
 
-There is no backend yet, so `src/identity.ts` runs on the browser's **localStorage**:
-IDs are issued locally, teammates can only be checked against IDs created in the same
-browser, and attendance is sample data (pages show a *demo* note while
-`IDENTITY_DEMO` is `true`). The pages only call the functions in that file, so swapping
-their bodies for real API calls (sign-in, ID issuing, attendance lookups) is all the
-backend switch needs. Payments are not wired up yet.
+Without the `VITE_FIREBASE_*` values the site falls back to a browser-only **demo**:
+`src/identity.ts` runs on localStorage, IDs are issued locally and pages show a *demo*
+note. Attendance and certificates are still sample data, and payments are not wired up yet.
 
 ## Deployment
 
 Every push to `main` runs `.github/workflows/deploy.yml`, which builds the site and
-publishes `dist/` to **GitHub Pages**. To enable the admin login on the live site, add
-`VITE_ADMIN_PASSWORD_SHA256` under *Settings → Secrets and variables → Actions →
-Variables*.
+publishes `dist/` to **GitHub Pages**. The Firebase web config is passed in from
+repository *variables* (*Settings → Secrets and variables → Actions → Variables*);
+the backend itself (Firestore rules and Cloud Functions) is deployed separately with
+the Firebase CLI, see [README-FIREBASE.md](README-FIREBASE.md).
 
 ## Credits
 

@@ -39,6 +39,10 @@ import {
   IDENTITY_DEMO, Profile, currentProfile, createProfile, signOutProfile, findProfile, qrPayload,
   isOptimusId, isCapsName, normalizeName, checkMember, MemberCheck, attendedEvents
 } from './identity';
+import {
+  FIREBASE_ENABLED, AuthUser, watchUser, signInWithGoogle, signOutUser, fetchMyProfile, createMyProfile,
+  checkTeamMembers, submitRegistration, backendError, remoteOverrides, remoteAnnouncements
+} from './backend';
 // Public-folder files are served under the Vite base (the repo sub-path on GitHub Pages, '/' in dev).
 const BASE =import.meta.env.BASE_URL;
 
@@ -4363,8 +4367,16 @@ function CertificatePage({ onHome }: { onHome: () => void }) {
   );
 }
 
-function MyPassPage({ profile, onProfile, onHome }: { profile: Profile | null; onProfile: (p: Profile | null) => void; onHome: () => void }) {
+function MyPassPage({ profile, onProfile, onHome, authUser, authReady }: {
+  profile: Profile | null; onProfile: (p: Profile | null) => void; onHome: () => void;
+  authUser: AuthUser | null; authReady: boolean;
+}) {
   const [form, setForm] = useState({ name: '', email: '', phone: '', college: '' });
+  const [busy, setBusy] = useState(false);
+  const googleSignIn = () => {
+    setBusy(true);
+    signInWithGoogle().catch((err) => window.alert(backendError(err))).finally(() => setBusy(false));
+  };
   const [qr, setQr] = useState('');
   useEffect(() => {
     if (!profile) { setQr(''); return; }
@@ -4375,12 +4387,20 @@ function MyPassPage({ profile, onProfile, onHome }: { profile: Profile | null; o
   const create = (e: React.FormEvent) => {
     e.preventDefault();
     const name = normalizeName(form.name);
-    if (!name || !form.email.trim() || !form.phone.trim() || !form.college.trim()) {
+    if (!name || (!FIREBASE_ENABLED && !form.email.trim()) || !form.phone.trim() || !form.college.trim()) {
       window.alert('Please fill in all the details.');
       return;
     }
     if (!isCapsName(name)) {
       window.alert('Name must be in CAPITAL LETTERS only (for example: JOSEPH VIJAY).');
+      return;
+    }
+    if (FIREBASE_ENABLED) {
+      // The server issues the ID and takes the email from the verified Google account.
+      setBusy(true);
+      createMyProfile({ name, phone: form.phone.trim(), college: form.college.trim() })
+        .then(onProfile, (err) => window.alert(backendError(err)))
+        .finally(() => setBusy(false));
       return;
     }
     onProfile(createProfile({ name, email: form.email.trim(), phone: form.phone.trim(), college: form.college.trim() }));
@@ -4431,12 +4451,61 @@ function MyPassPage({ profile, onProfile, onHome }: { profile: Profile | null; o
               </a>
             )}
             <button
-              onClick={() => { signOutProfile(); onProfile(null); }}
+              onClick={() => { if (FIREBASE_ENABLED) signOutUser(); else { signOutProfile(); onProfile(null); } }}
               className="px-6 py-3 rounded-xl border border-slate-700 text-slate-300 hover:text-white text-xs font-mono font-bold tracking-widest"
             >
               SIGN OUT
             </button>
           </div>
+        </div>
+      ) : FIREBASE_ENABLED ? (
+        <div className="max-w-xl mx-auto rounded-3xl bg-slate-900/90 border border-slate-800 p-6 sm:p-8 space-y-5">
+          {!authReady ? (
+            <p className="text-center text-sm font-mono text-slate-400">Checking your sign-in…</p>
+          ) : !authUser ? (
+            <>
+              <button
+                type="button"
+                onClick={googleSignIn}
+                disabled={busy}
+                className="w-full py-3.5 rounded-xl bg-white text-slate-900 text-xs font-black tracking-widest flex items-center justify-center gap-2 disabled:opacity-60"
+              >
+                <span className="text-base leading-none font-black">G</span> {busy ? 'OPENING GOOGLE…' : 'SIGN IN WITH GOOGLE'}
+              </button>
+              <p className="text-xs text-slate-400 text-center leading-relaxed">
+                Your Optimus ID is tied to your Google account, so only you can use it. Your details are stored securely and are never shown to other participants.
+              </p>
+            </>
+          ) : (
+            <form onSubmit={create} noValidate className="space-y-5">
+              <div className="flex items-center justify-between gap-3 text-xs">
+                <span className="font-mono text-slate-400 truncate">Signed in as <span className="text-slate-200">{authUser.email}</span></span>
+                <button type="button" onClick={() => signOutUser()} className="shrink-0 font-mono font-bold tracking-widest text-slate-400 hover:text-white">SWITCH</button>
+              </div>
+              <div>
+                <label htmlFor="mp-name" className={label}>NAME (CAPITAL LETTERS ONLY)</label>
+                <input id="mp-name" type="text" autoComplete="name" placeholder="e.g. JOSEPH VIJAY" value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })} className={field} />
+              </div>
+              <div>
+                <label htmlFor="mp-college" className={label}>COLLEGE / INSTITUTION</label>
+                <input id="mp-college" type="text" autoComplete="organization" placeholder="Your college name" value={form.college}
+                  onChange={(e) => setForm({ ...form, college: e.target.value })} className={field} />
+              </div>
+              <div>
+                <label htmlFor="mp-phone" className={label}>PHONE</label>
+                <input id="mp-phone" type="tel" autoComplete="tel" placeholder="+91 9876543210" value={form.phone}
+                  onChange={(e) => setForm({ ...form, phone: e.target.value })} className={field} />
+              </div>
+              <button
+                type="submit"
+                disabled={busy}
+                className="w-full py-4 rounded-xl bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 text-black text-xs font-black tracking-widest flex items-center justify-center gap-2 disabled:opacity-60"
+              >
+                <QrCode className="w-4 h-4" /> {busy ? 'CREATING…' : 'GET OPTIMUS ID'}
+              </button>
+            </form>
+          )}
         </div>
       ) : (
         <form onSubmit={create} noValidate className="max-w-xl mx-auto rounded-3xl bg-slate-900/90 border border-slate-800 p-6 sm:p-8 space-y-5">
@@ -4481,7 +4550,7 @@ function MyPassPage({ profile, onProfile, onHome }: { profile: Profile | null; o
           </button>
         </form>
       )}
-      {IDENTITY_DEMO && <DemoNote>IDs are saved only in this browser until Google sign-in and the backend are connected.</DemoNote>}
+      {IDENTITY_DEMO && !FIREBASE_ENABLED && <DemoNote>IDs are saved only in this browser until Google sign-in and the backend are connected.</DemoNote>}
     </section>
   );
 }
@@ -4994,7 +5063,7 @@ export default function App() {
     return () => window.removeEventListener('pointerdown', onDown);
   }, []);
   const [subPage, setSubPage] = useState<SubPage>(subPageFromHash);
-  const [profile, setProfile] = useState<Profile | null>(currentProfile);
+  const [profile, setProfile] = useState<Profile | null>(FIREBASE_ENABLED ? null : currentProfile);
   useEffect(() => {
     const sync = () => setSubPage(subPageFromHash());
     window.addEventListener('hashchange', sync);
@@ -5085,10 +5154,30 @@ export default function App() {
   const [dismissedNotices, setDismissedNotices] = useState<string[]>([]);
   useEffect(() => {
     recordVisit();
+    if (FIREBASE_ENABLED) return;   // the shared copies are loaded below
     const overrides = listOverrides();
     if (Object.keys(overrides).length) { applyOverrides(overrides); setContentRev((r) => r + 1); }
     setAnnouncements(listAnnouncements().filter((a) => a.active));
   }, []);
+
+  /* ---- Google sign-in and shared data (only when the Firebase backend is configured) ---- */
+  // Starts once the entry screen is gone, so Firebase never competes with the first load.
+  const backendOn = FIREBASE_ENABLED && gate === 'gone';
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [authReady, setAuthReady] = useState(!FIREBASE_ENABLED);
+  useEffect(() => {
+    if (!backendOn) return;
+    return watchUser((u) => {
+      setAuthUser(u);
+      if (!u) { setProfile(null); setAuthReady(true); return; }
+      fetchMyProfile(u.uid).then(setProfile, () => setProfile(null)).finally(() => setAuthReady(true));
+    });
+  }, [backendOn]);
+  useEffect(() => {
+    if (!backendOn) return;
+    remoteOverrides().then((o) => { if (Object.keys(o).length) { applyOverrides(o); setContentRev((r) => r + 1); } }, () => {});
+    remoteAnnouncements().then((a) => setAnnouncements(a.filter((x) => x.active)), () => {});
+  }, [backendOn]);
   const notices = announcements.filter((a) => !dismissedNotices.includes(a.id)).slice(0, 3);
 
   const [formData, setFormData] = useState({
@@ -5101,8 +5190,33 @@ export default function App() {
   });
   const teamMembers = formData.members.slice(0, formData.teamSize - 1);
   // Live check for each teammate row (ID format, exists, name matches, no repeats).
+  // With the backend connected the server does the check (it alone knows who exists and who is already in a
+  // team, and it never reveals anyone's details); without it, the browser-only demo check is used.
+  const [remoteChecks, setRemoteChecks] = useState<(MemberCheck | null)[]>([]);
+  const memberKey = JSON.stringify(teamMembers);
+  const teamPassId = passById(formData.pass).team ? formData.pass : null;
+  useEffect(() => {
+    if (!FIREBASE_ENABLED || !profile || !teamPassId || !isRegisterOpen) return;
+    const rows = teamMembers.map((m) => ({ id: m.id.trim().toUpperCase(), name: normalizeName(m.name) }));
+    const filled = rows.map((r, i) => (r.id || r.name ? i : -1)).filter((i) => i >= 0);
+    if (!filled.length) { setRemoteChecks([]); return; }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      checkTeamMembers(teamPassId, filled.map((i) => rows[i])).then(
+        (res) => {
+          if (cancelled) return;
+          const out: (MemberCheck | null)[] = rows.map(() => null);
+          filled.forEach((rowIndex, k) => { out[rowIndex] = res[k]; });
+          setRemoteChecks(out);
+        },
+        () => { if (!cancelled) setRemoteChecks([]); }
+      );
+    }, 600);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [memberKey, teamPassId, profile?.id, isRegisterOpen]);   // eslint-disable-line react-hooks/exhaustive-deps
   const memberChecks: (MemberCheck | null)[] = teamMembers.map((m, i) => {
     if (!m.id.trim() && !m.name.trim()) return null;
+    if (FIREBASE_ENABLED) return remoteChecks[i] ?? null;
     const others = [profile?.id ?? '', ...teamMembers.slice(0, i).map((o) => o.id.trim())];
     return checkMember(m.id.trim(), m.name, others);
   });
@@ -5272,9 +5386,25 @@ export default function App() {
     setIsRegisterOpen(true);
   };
 
+  const submittingRef = useRef(false);
   const handleRegisterSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!profile) return;
+    if (FIREBASE_ENABLED) {
+      // The server re-checks every teammate, the team size, the one-team-per-person rule and works out the price.
+      if (submittingRef.current) return;
+      submittingRef.current = true;
+      submitRegistration({
+        pass: pass.id,
+        day: pass.pickDay ? formData.day : null,
+        teamName: pass.team ? formData.teamName.trim() : null,
+        members: pass.team ? teamMembers.map((m) => ({ id: m.id.trim().toUpperCase(), name: normalizeName(m.name) })) : []
+      }).then(
+        () => setRegisterSuccess(true),
+        (err) => window.alert(backendError(err))
+      ).finally(() => { submittingRef.current = false; });
+      return;
+    }
     if (pass.team) {
       const bad = memberChecks.findIndex((c) => c !== 'ok');
       if (bad !== -1) {
@@ -5729,7 +5859,7 @@ export default function App() {
         {subPage === 'certificate' ? (
           <CertificatePage onHome={goHome} />
         ) : subPage === 'mypass' ? (
-          <MyPassPage profile={profile} onProfile={setProfile} onHome={goHome} />
+          <MyPassPage profile={profile} onProfile={setProfile} onHome={goHome} authUser={authUser} authReady={authReady} />
         ) : !active ? (
           /* ======================= HOME ======================= */
           <>
@@ -6299,7 +6429,8 @@ export default function App() {
                       'bad-format': ['text-slate-500', 'ID FORMAT: OPT27-00000'],
                       'not-found': ['text-rose-400', 'NO SUCH OPTIMUS ID'],
                       'name-mismatch': ['text-rose-400', 'NAME DOES NOT MATCH THIS ID'],
-                      'duplicate': ['text-rose-400', 'ALREADY IN TEAM']
+                      'duplicate': ['text-rose-400', 'ALREADY IN TEAM'],
+                      'busy': ['text-rose-400', 'ALREADY IN ANOTHER TEAM FOR THIS EVENT']
                     };
                     const setMember = (patch: Partial<{ id: string; name: string }>) => {
                       const members = [...formData.members];

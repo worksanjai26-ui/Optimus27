@@ -1,9 +1,16 @@
 node_modules/
 dist/
 
-# Local secrets (admin password hash)
+# Local config
 .env.local
 .env.*.local
+
+# Firebase CLI
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+functions/.env.local
 
 .claude/settings.local.json
 .DS_Store

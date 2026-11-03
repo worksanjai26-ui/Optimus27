@@ -1,9 +1,9 @@
 /* ------------------------------------------------------------------ *
- *  Frontend-only data for the /admin panel.
- *  Everything lives in this browser's localStorage, so the admin sees the
- *  registrations made on this same browser only, and the password check
- *  below can be bypassed by anyone who reads the JS. Swap these functions
- *  for real API calls when a backend is added.
+ *  Browser-only fallback data, used when the Firebase backend is not
+ *  configured (see src/backend.ts for the real thing). Everything here
+ *  lives in this browser's localStorage, so nothing is shared. The admin
+ *  panel no longer works without Firebase: there is no password in the
+ *  site any more, admins sign in with Google.
  * ------------------------------------------------------------------ */
 
 export type Registration = {
@@ -18,8 +18,7 @@ export type Overrides = Record<string, Record<string, unknown>>;
 const KEYS = {
   registrations: 'optimus27.registrations',
   overrides: 'optimus27.eventOverrides',
-  announcements: 'optimus27.announcements',
-  session: 'optimus27.admin'
+  announcements: 'optimus27.announcements'
 };
 
 const read = <T>(key: string, fallback: T): T => {
@@ -94,24 +93,3 @@ export const getVisitStats = async (): Promise<VisitStats> => {
   return { visits, visitors };
 };
 
-/* ---- admin login ---- */
-// SHA-256 of the admin password, set in .env.local.
-const PASSWORD_HASH = (import.meta.env.VITE_ADMIN_PASSWORD_SHA256 as string | undefined)?.trim().toLowerCase();
-export const adminConfigured = !!PASSWORD_HASH;
-
-const sha256 = async (text: string) => {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-  return Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, '0')).join('');
-};
-export const signIn = async (password: string) => {
-  if (!PASSWORD_HASH || !crypto.subtle) return false;
-  const ok = (await sha256(password)) === PASSWORD_HASH;
-  if (ok) try { sessionStorage.setItem(KEYS.session, PASSWORD_HASH); } catch { /* blocked */ }
-  return ok;
-};
-export const isSignedIn = () => {
-  try { return !!PASSWORD_HASH && sessionStorage.getItem(KEYS.session) === PASSWORD_HASH; } catch { return false; }
-};
-export const signOut = () => {
-  try { sessionStorage.removeItem(KEYS.session); } catch { /* blocked */ }
-};
