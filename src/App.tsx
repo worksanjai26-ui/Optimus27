@@ -5662,7 +5662,7 @@ export default function App() {
             <button
               onClick={goMyPass}
               title={profile ? `My pass · ${profile.id}` : 'Get your Optimus ID'}
-              className={`hidden md:inline-flex items-center gap-2 px-3 2xl:px-4 py-2.5 rounded-xl border ${subPage === 'mypass' ? 'border-amber-400 text-amber-300' : 'border-slate-700 text-slate-200 hover:border-slate-500'} text-xs font-black tracking-widest font-mono`}
+              className={`hidden md:inline-flex items-center gap-2 px-3 2xl:px-4 py-2.5 rounded-xl border ${t.text} ${subPage === 'mypass' ? t.ring : 'border-slate-700 hover:border-slate-500'} transition-colors text-xs font-black tracking-widest font-mono`}
             >
               <QrCode className="w-4 h-4" /> <span className="hidden 2xl:inline">{profile ? profile.id : 'GET OPTIMUS ID'}</span>
             </button>
