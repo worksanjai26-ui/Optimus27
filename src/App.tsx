@@ -515,10 +515,10 @@ const heroByKey = (k: string | null) => HEROES.find((h) => h.key === k) || null;
 // is re-measured every frame (sections can resize on the way), and any wheel / touch / key input hands
 // control straight back to the user.
 let glideRaf = 0;
-const glideTo = (el: HTMLElement | null) => {
+const glideTo = (el: HTMLElement | null, offset?: number) => {
   if (!el) return;
   cancelAnimationFrame(glideRaf);
-  const targetY = () => el.getBoundingClientRect().top + window.scrollY - (parseFloat(getComputedStyle(el).scrollMarginTop) || 0);
+  const targetY = () => el.getBoundingClientRect().top + window.scrollY - (offset ?? (parseFloat(getComputedStyle(el).scrollMarginTop) || 0));
   const jump = (y: number) => window.scrollTo({ top: y, behavior: 'instant' as ScrollBehavior });
   const start = window.scrollY;
   const dist = targetY() - start;
@@ -5731,6 +5731,14 @@ export default function App() {
                     </button>
                     <a
                       href="#roster"
+                      onClick={(e) => {
+                        // Straight to the first leader: on laptops its row pins exactly at the top (card
+                        // beside Bumblebee on the events stage); on phones, its card just under the header.
+                        e.preventDefault();
+                        const row = document.querySelector<HTMLElement>('[data-stage-row="bumblebee"]');
+                        if (window.innerWidth >= 1024) glideTo(row, 0);
+                        else glideTo(row?.querySelector('button') ?? row, 88);
+                      }}
                       className="flex-1 min-w-0 sm:flex-none flex items-center justify-center px-2 sm:px-10 py-3 sm:py-4 rounded-xl bg-slate-900/90 border border-slate-700/80 hover:bg-slate-800 text-slate-200 text-[11px] sm:text-xs font-mono font-bold tracking-wide sm:tracking-widest transition-all whitespace-nowrap"
                     >
                       MEET THE LEADERS
