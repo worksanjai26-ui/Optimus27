@@ -5120,6 +5120,34 @@ export default function App() {
   const introDelay = (extra: number) => `${(introPlaying ? 3.6 : 0.05) + extra}s`;
   const t = THEME[active ? active.theme : 'amber'];
 
+  /* ---- which home section is on screen (drives the phone bar's lit tab) ---- */
+  const [navSection, setNavSection] = useState<'home' | 'leaders' | 'passes'>('home');
+  const navLockUntil = useRef(0);   // after a tap, the tapped tab stays lit while the page glides there
+  const markNav = useCallback((s: 'home' | 'leaders' | 'passes') => {
+    navLockUntil.current = performance.now() + 1600;
+    setNavSection(s);
+  }, []);
+  useEffect(() => {
+    if (activeHero || subPage || gate !== 'gone') return;
+    // Two rect reads and a no-op setState when nothing changed, so it is cheap to run on every scroll event.
+    const update = () => {
+      if (performance.now() < navLockUntil.current) return;
+      const mid = window.innerHeight * 0.5;
+      const top = (id: string) => document.getElementById(id)?.getBoundingClientRect().top ?? Infinity;
+      setNavSection(top('passes') <= mid ? 'passes' : top('roster') <= mid ? 'leaders' : 'home');
+    };
+    window.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update);
+    // Re-check just after a tap's lock ends, since the glide's last scroll event may fall inside it.
+    const settle = window.setInterval(update, 700);
+    update();
+    return () => {
+      window.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+      clearInterval(settle);
+    };
+  }, [activeHero, subPage, gate]);
+
   /* ---- navigation ---- */
   const goHero = useCallback((key: string) => {
     if (!visitedRef.current.has(key)) {
@@ -5133,6 +5161,7 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
   const goHome = useCallback(() => {
+    markNav('home');
     setActiveHero(null);
     leaveSubPage();
     setMobileMenuOpen(false);
@@ -5150,6 +5179,7 @@ export default function App() {
   const goMyPass = useCallback(() => goSubPage('mypass'), [goSubPage]);
   // The passes section lives on the home page, so leave any hero page first.
   const goPasses = useCallback(() => {
+    markNav('passes');
     setActiveHero(null);
     leaveSubPage();
     setMobileMenuOpen(false);
@@ -5158,6 +5188,7 @@ export default function App() {
 
   // Leaders list sits on the home page too, so leave any hero page first (phone action bar).
   const goRoster = useCallback(() => {
+    markNav('leaders');
     setActiveHero(null);
     leaveSubPage();
     setMobileMenuOpen(false);
@@ -6506,16 +6537,21 @@ export default function App() {
           style={{ paddingBottom: 'max(0.375rem, env(safe-area-inset-bottom))' }}
         >
           {([
-            { label: 'HOME', icon: <Home className="w-5 h-5" />, on: goHome, current: !active && !subPage },
-            { label: 'LEADERS', icon: <Users className="w-5 h-5" />, on: goRoster, current: !!active },
-            { label: 'PASSES', icon: <Ticket className="w-5 h-5" />, on: goPasses, current: false }
+            { label: 'HOME', icon: <Home className="w-5 h-5" />, on: goHome, current: !active && !subPage && navSection === 'home', tone: 'text-amber-400' },
+            { label: 'LEADERS', icon: <Users className="w-5 h-5" />, on: goRoster, current: !!active || (!subPage && navSection === 'leaders'), tone: active ? t.text : 'text-cyan-400' },
+            { label: 'PASSES', icon: <Ticket className="w-5 h-5" />, on: goPasses, current: !active && !subPage && navSection === 'passes', tone: 'text-fuchsia-400' }
           ] as const).map((b) => (
             <button
               key={b.label}
               onClick={b.on}
               aria-current={b.current ? 'page' : undefined}
-              className={`flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-[9px] font-mono font-bold tracking-widest active:scale-95 ${b.current ? t.text : 'text-slate-400'}`}
+              className={`relative flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-[9px] font-mono font-bold tracking-widest active:scale-95 transition-colors duration-300 ${b.current ? b.tone : 'text-slate-400'}`}
             >
+              {/* the "light": a glowing bar over the tab you are on, in that tab's colour */}
+              <span
+                aria-hidden="true"
+                className={`absolute -top-1.5 inset-x-3 h-0.5 rounded-full bg-current shadow-[0_0_10px_currentColor] transition-opacity duration-300 ${b.current ? 'opacity-100' : 'opacity-0'}`}
+              />
               {b.icon}
               {b.label}
             </button>
