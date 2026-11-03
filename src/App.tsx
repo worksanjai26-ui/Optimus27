@@ -1003,6 +1003,11 @@ if (typeof document !== 'undefined') document.documentElement.classList.add(`tie
 // Scroll-driven "events stage": the events section writes which leader is on stage and where
 // (u: −1 = left screen edge, +1 = right edge, beyond ±1 = off screen). Mutated in place on scroll,
 // read every frame, so scrolling never re-renders React.
+// Set while opaque page content hides the whole 3D scene (the techno-fest + prize sections filling
+// the screen, or the certificate page's backdrop). The render loop idles then, which frees the
+// GPU / CPU for scrolling on phones and integrated-graphics laptops.
+export const sceneGate = { scroll: false, page: false };
+
 export type StageState = {
   key: string | null;
   u: number;
@@ -2952,7 +2957,7 @@ const ThreeHeroBackground = ({
       // incomplete-framebuffer errors from the post-processing passes.
       if (!renderer.domElement.width || !renderer.domElement.height) return;
       // Behind the opaque entry screen: render a short warm-up, then idle.
-      if (pausedRef.current && warmFrames > 45) { clock.getDelta(); perfAcc = perfFrames = 0; return; }
+      if ((pausedRef.current || sceneGate.scroll || sceneGate.page) && warmFrames > 45) { clock.getDelta(); perfAcc = perfFrames = 0; return; }
       // Scrolled down into the page content the scene is mostly covered: draw at half rate.
       // Full rate only while a leader is actually on the events stage.
       const onStage = !!stage?.current.key && !!records[stage.current.key];
@@ -3819,6 +3824,17 @@ const MOTION_CSS = `
 @keyframes eqBar { from { transform: scaleY(0.35); } to { transform: scaleY(1); } }
 
 /* Weaker GPUs: drop effects that force full repaints while things animate over the 3D canvas. */
+/* Low tier: the techno-fest top fade stays a fixed length (no mask repaint on every scroll frame),
+   glows lose their blur filters, the pass deck dims with opacity instead of a filter, and the
+   certificate hologram skips its drop-shadow, flicker and glass blur. */
+.tier-low .tf-sec { --fade: 24vh; }
+.tier-low .tf-hz-line { filter: none; stroke-width: 2.6; }
+.tier-low .tf-hz-core { box-shadow: 0 0 10px 3px rgba(250,204,21,.7); }
+.tier-low .pass-card { filter: none !important; transition: transform .4s cubic-bezier(.2,.8,.2,1), opacity .3s ease; }
+.tier-low .pass-deck:not(.is-rest) .pass-card:not(.pass-on) { opacity: .72; }
+.tier-low .cert-holo, .tier-mid .cert-holo { filter: none; animation: none; }
+.tier-low .backdrop-blur-sm { -webkit-backdrop-filter: none; backdrop-filter: none; }
+.tier-low .pv-vault, .tier-low .cert-scan { animation: none; }
 .tier-low .prize-trophy, .tier-mid .prize-trophy { filter: none; }
 .tier-low .blur-2xl, .tier-low .blur-3xl, .tier-mid .blur-2xl, .tier-mid .blur-3xl { display: none; }
 .tier-low .prize-mote, .tier-low .gate-mote { display: none; }
@@ -4082,6 +4098,10 @@ type CertResult = { eventId: string; title: string; arena: string; url: string; 
 // console beam over a blueprint grid, with a scan line sweeping the document, the Autobot crest as its
 // seal and HUD corner brackets. Fixed behind the page content (and over the 3D scene); transform-only motion.
 function CertBackdrop() {
+  useEffect(() => {
+    sceneGate.page = true;
+    return () => { sceneGate.page = false; };
+  }, []);
   return (
     <div className="fixed inset-0 -z-10 pointer-events-none overflow-hidden" aria-hidden="true">
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_75%_60%_at_50%_38%,#0b2442_0%,#060e1e_55%,#03050b_100%)]" />
@@ -4541,6 +4561,11 @@ function TechnoFestSection() {
       const roster = document.getElementById('roster');
       const leave = roster ? clamp01((vh - roster.getBoundingClientRect().top) / (vh * 0.6)) : 0;
       const root = document.documentElement.style;
+      // The techno-fest section is opaque below its top fade (≤ 35vh) and the prize section right after
+      // it is fully opaque: while together they cover the screen, nothing of the 3D scene is visible.
+      const prize = document.querySelector<HTMLElement>('.prize-sec');
+      const opaqueBottom = prize ? prize.getBoundingClientRect().bottom : r.bottom;
+      sceneGate.scroll = r.top + vh * 0.4 <= 0 && opaqueBottom >= vh;
       root.setProperty('--hero-out', clamp01((window.scrollY - vh * 0.1) / (vh * 0.6)).toFixed(3));
       root.setProperty('--scene-dim', (clamp01((vh * 0.85 - r.top) / (vh * 0.75)) * (1 - leave)).toFixed(3));
     };
@@ -4554,6 +4579,7 @@ function TechnoFestSection() {
       window.removeEventListener('resize', onScroll);
       document.documentElement.style.setProperty('--hero-out', '0');
       document.documentElement.style.setProperty('--scene-dim', '0');
+      sceneGate.scroll = false;
     };
   }, []);
 
