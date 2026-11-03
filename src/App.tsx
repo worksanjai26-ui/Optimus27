@@ -281,8 +281,12 @@ const buildCursorCss = (hex: string) => {
 
 /* ============================ HERO DATA =========================== */
 export type EventItem = {
-  id: string; title: string; tag: string; team: string; prize: string;
+  id: string; title: string;
+  tag: string;            // the event's domain, shown in its facts strip
+  team: string; prize: string;
   desc: string; rules: string[]; placeholder?: boolean;
+  split?: number[];       // 1st / 2nd / 3rd prize, in rupees
+  extra?: { label: string; value: string }[];   // more facts (duration, format …)
 };
 export type Hero = {
   key: string; name: string; role: string; faction: 'AUTOBOT' | 'DECEPTICON';
@@ -318,10 +322,17 @@ export const HEROES: Hero[] = [
       {
         id: 'hackathon',
         title: 'BUMBLEBEE HACKATHON',
-        tag: 'Flagship • 24 Hours',
+        tag: 'AI / ML · Web & App · IoT & Hardware · Open Innovation',
         team: '2 – 4 Members',
         prize: '₹60,000',
-        desc: 'The flagship national-level hackathon of OPTIMUS \'27. Teams build a working product in 24 non-stop hours across AI/ML, Web, IoT and open-innovation tracks — from idea to live demo.',
+        split: [30000, 20000, 10000],
+        extra: [
+          { label: 'Duration', value: '24 Hours · Non-stop' },
+          { label: 'Dates', value: 'Feb 4 – 5, 2027' },
+          { label: 'Format', value: 'Screening → Build → Demo' },
+          { label: 'Support', value: 'Mentors all night' }
+        ],
+        desc: 'The national-level flagship of OPTIMUS \'27. Pick a domain track and take an idea to a working product in 24 non-stop hours — mentors are on the floor through the night, checkpoints keep every team on course, and the best builds face the jury in a final live demo and pitch.',
         rules: [
           'Bring your own laptops and dev kits',
           'Fresh code only — no pre-built projects',
@@ -348,10 +359,11 @@ export const HEROES: Hero[] = [
       {
         id: 'paper',
         title: 'PAPER PRESENTATION',
-        tag: 'Technical • Research',
+        tag: 'Technical Research · AI, ECE, Mech, Civil, IT',
         team: '1 – 2 Members',
         prize: '₹10,000',
-        desc: 'Present your original research or technical paper before an expert panel. Domains span AI, ECE, Mechanical, Civil, IT and interdisciplinary innovation.',
+        split: [5000, 3000, 2000],
+        desc: 'Present your original research or technical paper to an expert panel. Shortlisted on abstract, judged on originality, depth and how well you defend your work in the Q&A.',
         rules: [
           'IEEE format abstract for screening',
           '8-minute presentation + Q&A',
@@ -361,10 +373,11 @@ export const HEROES: Hero[] = [
       {
         id: 'project',
         title: 'PROJECT PRESENTATION',
-        tag: 'Technical • Prototype',
+        tag: 'Technical Prototype · Working Model',
         team: '1 – 4 Members',
         prize: '₹10,000',
-        desc: 'Showcase a working model or prototype. Demonstrate the problem, your solution and its real-world impact to the judges.',
+        split: [5000, 3000, 2000],
+        desc: 'Bring a working model or prototype and demo it live. Walk the judges through the problem, your build and its real-world impact.',
         rules: [
           'Working model / prototype preferred',
           'Live demonstration + viva',
@@ -374,10 +387,11 @@ export const HEROES: Hero[] = [
       {
         id: 'poster',
         title: 'POSTER PRESENTATION',
-        tag: 'Technical • Visual',
+        tag: 'Technical Visual · Poster Design',
         team: '1 – 2 Members',
         prize: '₹10,000',
-        desc: 'Tell a complete technical story on a single poster. Clarity, creativity and depth of concept win the arena.',
+        split: [5000, 3000, 2000],
+        desc: 'Tell a complete technical story on a single poster, then walk the judges through it. Clarity, creativity and depth of concept win the arena.',
         rules: [
           'Single poster (A1 / as specified)',
           '5-minute walkthrough to judges',
@@ -386,13 +400,13 @@ export const HEROES: Hero[] = [
       },
       {
         id: 'presentation-4',
-        title: 'PRESENTATION — EVENT 4',
-        tag: 'Technical • Placeholder',
-        team: 'TBA',
+        title: 'PITCH PRESENTATION',
+        tag: 'Startup & Business Pitch',
+        team: '1 – 4 Members',
         prize: '₹10,000',
-        desc: 'Placeholder — the fourth presentation event of the Megatron arena. Replace with the confirmed event name, format and rules.',
-        rules: ['Format: TBA', 'Team size: TBA', 'Rules: TBA'],
-        placeholder: true
+        split: [5000, 3000, 2000],
+        desc: 'Pitch a startup or product idea to the panel. Cover the problem, market, solution and business model in a tight, timed pitch — then hold your ground in the Q&A.',
+        rules: ['5-minute pitch + 3-minute Q&A', 'Pitch deck of up to 10 slides', 'Prototype or mock-ups welcome']
       }
     ]
   },
@@ -413,10 +427,10 @@ export const HEROES: Hero[] = [
       {
         id: 'workshop-core',
         title: 'TECHNICAL WORKSHOP',
-        tag: 'Hands-on • Certified',
+        tag: 'Hands-on Lab · Beginner Friendly',
         team: 'Individual',
         prize: 'Certificate of Completion',
-        desc: 'Instructor-led, hands-on workshop with live exercises and take-home resources. Beginner friendly, mentor supported.',
+        desc: 'Instructor-led, hands-on workshop with live exercises and take-home resources. Beginner friendly and mentor supported, with a certificate on completion.',
         rules: [
           'Bring your own laptop',
           'Limited seats — pre-registration required',
@@ -426,20 +440,20 @@ export const HEROES: Hero[] = [
       {
         id: 'workshop-track-2',
         title: 'WORKSHOP — TRACK 2',
-        tag: 'Hands-on • Placeholder',
+        tag: 'Hands-on Lab · AI/ML, IoT, Cloud or Security',
         team: 'Individual',
         prize: 'Certificate of Completion',
-        desc: 'Placeholder track — replace with your confirmed workshop (e.g. AI/ML, IoT & Robotics, Cloud/DevOps, Cybersecurity).',
+        desc: 'A second hands-on track on an in-demand stack — AI/ML, IoT & Robotics, Cloud/DevOps or Cybersecurity. Build alongside a mentor and leave with working code.',
         rules: ['Bring your own laptop', 'Pre-registration required', 'Topic & mentor: TBA'],
         placeholder: true
       },
       {
         id: 'workshop-track-3',
         title: 'WORKSHOP — TRACK 3',
-        tag: 'Hands-on • Placeholder',
+        tag: 'Hands-on Lab · Industry Mentors',
         team: 'Individual',
         prize: 'Certificate of Completion',
-        desc: 'Placeholder track — replace with your confirmed workshop topic and schedule.',
+        desc: 'A third mentor-led lab where you build a small project end to end, with live help at every step and a certificate on completion.',
         rules: ['Bring your own laptop', 'Pre-registration required', 'Topic & mentor: TBA'],
         placeholder: true
       }
@@ -463,38 +477,89 @@ export const HEROES: Hero[] = [
       {
         id: 'photography',
         title: 'PHOTOGRAPHY / REELS',
-        tag: 'Non-Tech • Placeholder',
+        tag: 'Creative · Photography & Reels',
         team: 'Individual',
         prize: '₹3,000',
-        desc: 'Placeholder event — capture the fest through a lens or a 30-second reel. Replace/confirm the exact theme & rules.',
-        rules: ['Original content only', 'Submit on the day', 'Theme: TBA'],
-        placeholder: true
+        split: [1500, 1000, 500],
+        desc: 'Capture the spirit of OPTIMUS \'27 through your lens — a photo series or a 30-second reel shot on the fest floor. Judged on storytelling, composition and creativity.',
+        rules: ['Original content shot during the fest', 'Phones and cameras both allowed', 'Submit before the deadline on the day']
       },
       {
         id: 'gaming',
         title: 'GAMING ARENA',
-        tag: 'Non-Tech • Placeholder',
+        tag: 'E-Sports · Mobile & PC',
         team: 'Solo / Squad',
         prize: '₹3,000',
-        desc: 'Placeholder event — competitive gaming tournament (e.g. BGMI / Valorant / Free Fire). Confirm titles & format.',
-        rules: ['Bring your own device (if applicable)', 'Bracket-based knockout', 'Titles: TBA'],
-        placeholder: true
+        split: [1500, 1000, 500],
+        desc: 'Squad up for a knockout e-sports tournament. Bracket rounds run through the day, with the finals played live on the big screen.',
+        rules: ['Bring your own device (if applicable)', 'Bracket-based knockout', 'Fair play — cheating disqualifies the team']
       },
       {
         id: 'quiz-fun',
         title: 'QUIZ & FUN EVENTS',
-        tag: 'Non-Tech • Placeholder',
+        tag: 'Quiz & Fun · On-the-spot',
         team: 'Solo / Duo',
         prize: '₹3,000',
-        desc: 'Placeholder event — quiz, connections, treasure hunt, meme-making and more on-the-spot fun. Add your final line-up here.',
-        rules: ['On-the-spot registration possible', 'Multiple mini-rounds', 'Events: TBA'],
-        placeholder: true
+        split: [1500, 1000, 500],
+        desc: 'Quiz rounds, connections, a treasure hunt and quick on-the-spot games — fast, social and open to everyone at the fest.',
+        rules: ['On-the-spot registration possible', 'Multiple mini-rounds', 'Points add up across rounds']
       }
     ]
   }
 ];
 
 const heroByKey = (k: string | null) => HEROES.find((h) => h.key === k) || null;
+
+type ThemeTok = (typeof THEME)[ThemeKey];
+// Theme colour as hex, for glows (inline styles can't use Tailwind classes).
+const hexOf = (t: ThemeTok) => CURSOR_HEX[(Object.keys(THEME) as ThemeKey[]).find((k) => THEME[k] === t) ?? 'amber'];
+
+// Facts strip under an event: domain, team size and any extra facts (duration, format …).
+function EventFacts({ ev, t, bare = false }: { ev: EventItem; t: ThemeTok; bare?: boolean }) {
+  const facts = [
+    ...(ev.tag ? [{ label: 'Domain', value: ev.tag, wide: true }] : []),
+    { label: 'Team', value: ev.team, wide: false },
+    ...(ev.extra ?? []).map((x) => ({ ...x, wide: false }))
+  ];
+  return (
+    <div className={`${bare ? '' : 'mt-5 pt-4 border-t border-slate-800/80 '}grid grid-cols-2 gap-x-4 gap-y-3 text-xs font-mono`}>
+      {facts.map((f) => (
+        <div key={f.label} className={f.wide ? 'col-span-2' : ''}>
+          <span className="text-slate-500 uppercase block text-[10px] tracking-wider">{f.label}</span>
+          <span className={f.label === 'Domain' ? t.text : 'text-slate-200'}>{f.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// The event's prize pool as a big glowing figure with the 1st / 2nd / 3rd split beside it;
+// workshops (no cash prize) show the certificate instead.
+function EventPrize({ ev, hex, t }: { ev: EventItem; hex: string; t: ThemeTok }) {
+  const cash = ev.prize.startsWith('₹');
+  return (
+    <div className="mt-4 pt-4 border-t border-slate-800/80 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+      <div className="flex items-center gap-2.5">
+        <span className={`text-3xl sm:text-4xl font-black tracking-tight leading-none ${t.text}`} style={{ fontStretch: '110%', textShadow: `0 0 22px ${hex}66` }}>
+          {cash ? ev.prize : 'CERTIFIED'}
+        </span>
+        <span className="font-mono text-[10px] sm:text-[11px] font-bold tracking-[0.25em] text-slate-400 leading-tight">
+          {cash ? <>PRIZE<br />POOL</> : <>CERTIFICATE OF<br />COMPLETION</>}
+        </span>
+      </div>
+      {ev.split && (
+        <div className="flex gap-4 font-mono">
+          {ev.split.map((amt, k) => (
+            <div key={k} className="text-right">
+              <span className="text-slate-500 block text-[9px] tracking-wider">{['1ST', '2ND', '3RD'][k]}</span>
+              <span className={`text-xs font-black ${['pz-gold', 'pz-silver', 'pz-bronze'][k]}`}>{inr(amt)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // Event fields the admin panel may override (see adminData.ts).
 export const EDITABLE_EVENT_FIELDS = ['title', 'tag', 'team', 'prize', 'desc', 'rules', 'placeholder'] as const;
@@ -917,6 +982,7 @@ export type StageState = {
   enterU: number;      // off-screen edge the current leader joins from (depends on scroll direction)
   leaveKey: string;    // leader that just lost the stage: it keeps walking until it is off screen
   leaveU: number;      // the off-screen edge it walks to
+  settled: boolean;    // set by the 3D scene: the leader on stage has finished its intro and reached its mark
 };
 
 const ThreeHeroBackground = ({
@@ -3050,6 +3116,8 @@ const ThreeHeroBackground = ({
           g.position.y += ((focused || staged ? GROUND_Y : rec.baseY) - g.position.y) * ease;
         }
 
+        if (staged) st!.settled = rec.introStart < 0 && Math.abs(g.position.x - st!.u * halfW) < halfW * 0.04;
+
         if ((staged || leaving) && rec.introStart < 0) {
           // On the events stage: face the way it travels while crossing, then turn to the camera.
           const vx = (g.position.x - prevX) / Math.max(dt, 1e-4);
@@ -3494,6 +3562,57 @@ const MOTION_CSS = `
 /* ---------- Prize-pool section (transparent: the 3D robot scene shows through) ---------- */
 .prize-sec { background: #03050b; }
 /* Prize vault backdrop */
+/* Pass deck: Cybertronian access keys. Laptops+: one overlapping row, the active key rises out
+   of the deck while the rest sit tilted back and dimmed. Below lg: a plain grid. */
+.cert-grid { opacity: .9;
+  background-image:
+    linear-gradient(rgba(34,211,238,.07) 1px, transparent 1px), linear-gradient(90deg, rgba(34,211,238,.07) 1px, transparent 1px),
+    linear-gradient(rgba(34,211,238,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(34,211,238,.035) 1px, transparent 1px);
+  background-size: 96px 96px, 96px 96px, 24px 24px, 24px 24px;
+  -webkit-mask-image: radial-gradient(ellipse 70% 65% at 50% 45%, #000 30%, transparent 80%); mask-image: radial-gradient(ellipse 70% 65% at 50% 45%, #000 30%, transparent 80%); }
+.cert-beam { transform: translateX(-50%); clip-path: polygon(44% 100%, 56% 100%, 92% 0, 8% 0);
+  background: linear-gradient(0deg, rgba(34,211,238,.20), rgba(34,211,238,.06) 55%, transparent); }
+.cert-holo { transform: translate(-50%, -50%) perspective(1400px) rotateX(16deg); opacity: .55;
+  filter: drop-shadow(0 0 14px rgba(34,211,238,.35)); animation: certFlicker 6s steps(1) infinite; }
+.cert-scan { position: absolute; left: 1.5%; right: 1.5%; top: 0; height: 18%;
+  background: linear-gradient(180deg, transparent, rgba(34,211,238,.07) 70%, rgba(165,243,252,.22) 100%);
+  border-bottom: 1px solid rgba(165,243,252,.4); animation: certScan 4.5s cubic-bezier(.45,0,.55,1) infinite; will-change: transform; }
+@keyframes certScan { 0% { transform: translateY(-10%); opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { transform: translateY(460%); opacity: 0; } }
+@keyframes certFlicker { 0%, 100% { opacity: .55; } 47% { opacity: .55; } 48% { opacity: .35; } 49% { opacity: .55; } 83% { opacity: .45; } 84% { opacity: .55; } }
+@media (prefers-reduced-motion: reduce) { .cert-holo, .cert-scan { animation: none; } }
+.cert-corner::after { content: ''; position: absolute; inset: 7px; border: inherit; border-color: rgba(34,211,238,.18); }
+.pass-deck { display: grid; grid-template-columns: 1fr; gap: 1.25rem; }
+@media (min-width: 768px) { .pass-deck { grid-template-columns: 1fr 1fr; } }
+.pass-card { --c: #f5c518; position: relative; min-width: 0; cursor: pointer; padding: 1px;
+  background: linear-gradient(160deg, var(--c), color-mix(in srgb, var(--c) 18%, transparent) 45%, color-mix(in srgb, var(--c) 45%, transparent));
+  clip-path: polygon(0 0, calc(100% - 22px) 0, 100% 22px, 100% 100%, 22px 100%, 0 calc(100% - 22px));
+  transition: transform .45s cubic-bezier(.2,.8,.2,1), filter .35s ease; }
+.pass-in { position: relative; height: 100%; display: flex; flex-direction: column; overflow: hidden;
+  background: linear-gradient(180deg, rgba(13,19,34,.97), rgba(3,7,16,.98));
+  clip-path: polygon(0 0, calc(100% - 21px) 0, 100% 21px, 100% 100%, 21px 100%, 0 calc(100% - 21px)); }
+.pass-in::after { content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse 70% 50% at 85% 100%, color-mix(in srgb, var(--c) 16%, transparent), transparent 70%); }
+.pass-head { display: flex; align-items: center; gap: .75rem; padding: .9rem 1.4rem; overflow: hidden;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--c) 16%, transparent), transparent 70%);
+  border-bottom: 1px solid color-mix(in srgb, var(--c) 30%, transparent); }
+.pass-hatch { width: 54px; height: 11px; flex-shrink: 0;
+  background: repeating-linear-gradient(115deg, var(--c) 0 3px, transparent 3px 7px); opacity: .9; }
+.pass-num { position: absolute; right: 1.1rem; bottom: .2rem; font-size: 6.5rem; line-height: 1; font-weight: 900;
+  color: transparent; -webkit-text-stroke: 1.2px color-mix(in srgb, var(--c) 55%, transparent); letter-spacing: -.04em; pointer-events: none; }
+.pass-book { position: relative; z-index: 1; }
+.pass-card:hover .pass-book { text-decoration: underline; text-underline-offset: 5px; }
+@media (min-width: 1024px) {
+  .pass-deck { display: flex; justify-content: center; align-items: center; perspective: 1400px; min-height: 34rem; }
+  .pass-card { flex: 0 0 min(25.5rem, 33vw); filter: brightness(.62) saturate(.8);
+    transform: translateY(14px) rotateY(-9deg) scale(.93); }
+  .pass-card + .pass-card { margin-left: -9.5rem; }
+  .pass-card.pass-on { filter: none; transform: translateY(-14px) rotateY(0) scale(1.03); }
+  .pass-card.pass-on ~ .pass-card { transform: translateY(14px) rotateY(9deg) scale(.93); }
+  .pass-deck.is-rest .pass-card { filter: none; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) { .pass-card { transition: none; } }
+.pv-vault-wrap { -webkit-mask-image: linear-gradient(180deg, #000 0, #000 15rem, transparent 25rem); mask-image: linear-gradient(180deg, #000 0, #000 15rem, transparent 25rem); }
+@media (min-width: 640px) { .pv-vault-wrap { -webkit-mask-image: linear-gradient(180deg, #000 0, #000 18rem, transparent 29rem); mask-image: linear-gradient(180deg, #000 0, #000 18rem, transparent 29rem); } }
 .pv-vault { transform: translate(-50%, -50%); animation: pvTurn 90s linear infinite; will-change: transform; }
 .pv-vault-in { animation-duration: 60s; animation-direction: reverse; }
 @keyframes pvTurn { from { transform: translate(-50%, -50%) rotate(0deg); } to { transform: translate(-50%, -50%) rotate(360deg); } }
@@ -3578,11 +3697,25 @@ const MOTION_CSS = `
 .prize-in .prize-heading-sweep { animation: prizeHeadSweep 1.3s ease-out .8s 1 both; }
 @keyframes prizeHeadSweep { 0% { background-position: 150% 0; opacity: 1; } 100% { background-position: -50% 0; opacity: 0; } }
 
-/* Techno-fest section: slanted top edge that flattens as it scrolls in; words slide in from the sides */
+/* Hero → techno-fest hand-off (vars set by TechnoFestSection on scroll): the hero HUD lifts and fades,
+   the fixed 3D arena dims into dark steel. */
+.hero-band { opacity: calc(1 - var(--hero-out, 0) * 0.95); transform: translateY(calc(var(--hero-out, 0) * -7vh)); }
+.scene-dim { background: #03050b; opacity: calc(var(--scene-dim, 0) * 0.82); }
+.tf-horizon { top: calc(var(--fade) * 0.82); --d: clamp(0, calc(var(--p) * 3.4 - 0.12), 1);
+  opacity: clamp(0, calc((0.92 - var(--p)) * 4), 1); }
+.tf-hz-line { fill: none; stroke: url(#tfHz); stroke-width: 2.2; vector-effect: non-scaling-stroke;
+  stroke-dasharray: 1; stroke-dashoffset: calc(1 - var(--d)); filter: drop-shadow(0 0 6px rgba(34,211,238,.9)); }
+.tf-hz-core { position: absolute; left: 50%; top: 75%; width: 14px; height: 14px; transform: translate(-50%, -50%) rotate(45deg) scale(calc(0.4 + var(--d) * 0.6));
+  background: #fff6c2; box-shadow: 0 0 14px 4px rgba(250,204,21,.85), 0 0 40px 12px rgba(34,211,238,.35); }
+@media (prefers-reduced-motion: reduce) { .hero-band { opacity: 1; transform: none; } .tf-horizon { display: none; } }
+
+/* Techno-fest section: no hard edge with the hero — its top dissolves into the 3D arena through a soft
+   fade that is long while the section is just rising (the hero melts into dark steel) and tightens as it
+   scrolls in. Words slide in from the sides. */
 .tf-sec {
-  /* --e: 0 while the page rests on the hero (the 6vh extension stays clipped away), 1 once scrolling has begun */
-  --e: clamp(0, calc((var(--p) - 0.06) * 6), 1);
-  clip-path: polygon(0 calc((1 - var(--e)) * 6vh + (1 - var(--p)) * 12vh), 100% calc((1 - var(--e)) * 6vh), 100% 100%, 0 100%);
+  --fade: calc(5vh + (1 - var(--p)) * 30vh);
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, rgba(0,0,0,.35) calc(var(--fade) * .45), #000 var(--fade));
+  mask-image: linear-gradient(180deg, transparent 0, rgba(0,0,0,.35) calc(var(--fade) * .45), #000 var(--fade));
 }
 .tf-word {
   --q: clamp(0, calc(var(--p) * 2.3 - var(--i) * 0.09), 1);
@@ -3668,7 +3801,6 @@ const MOTION_CSS = `
   .tr-3d, .tr-cup, .tr-base, .tr-hL, .tr-hR, .tr-star, .eq-bar { animation: none !important; }
   .click-burst { display: none; }
   .pv-vault, .pv-conduit i { animation: none; }
-  .tf-sec { clip-path: none; }
   .tf-zap .tf-word { animation: none; }
   .prize-trophy, .prize-rise, .prize-plus, .tr-cup, .tr-base, .tr-hL, .tr-hR, .tr-star { opacity: 1 !important; transform: none !important; }
   .lift-card:hover, .stat-tile:hover { transform: none; }
@@ -3915,6 +4047,61 @@ const DemoNote = ({ children }: { children: React.ReactNode }) => (
 
 type CertResult = { eventId: string; title: string; arena: string; url: string; file: string };
 
+// Certificate page backdrop — "Autobot records": a cyan holographic certificate projected up from a
+// console beam over a blueprint grid, with a scan line sweeping the document, the Autobot crest as its
+// seal and HUD corner brackets. Fixed behind the page content (and over the 3D scene); transform-only motion.
+function CertBackdrop() {
+  return (
+    <div className="fixed inset-0 -z-10 pointer-events-none overflow-hidden" aria-hidden="true">
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_75%_60%_at_50%_38%,#0b2442_0%,#060e1e_55%,#03050b_100%)]" />
+      <div className="cert-grid absolute inset-0" />
+      {/* Projector beam rising from the console below the form */}
+      <div className="cert-beam absolute left-1/2 bottom-0 w-[min(140vw,1200px)] h-[78%]" />
+      {/* The hologram: an A4-landscape certificate drawn in light, tilted back like a projection */}
+      <div className="cert-holo absolute left-1/2 top-[48%] w-[min(88vw,940px)]">
+        <svg viewBox="0 0 1414 1000" className="block w-full h-auto" fill="none">
+          <path d="M60 20 H1354 L1394 60 V940 L1354 980 H60 L20 940 V60 Z" stroke="rgba(34,211,238,.45)" strokeWidth="2.5" />
+          <path d="M84 48 H1330 L1366 84 V916 L1330 952 H84 L48 916 V84 Z" stroke="rgba(34,211,238,.22)" strokeWidth="1.2" strokeDasharray="10 8" />
+          {/* corner filigree */}
+          {[[48, 48, 1, 1], [1366, 48, -1, 1], [48, 952, 1, -1], [1366, 952, -1, -1]].map(([x, y, sx, sy], k) => (
+            <path key={k} d={`M${x + sx * 10} ${y + sy * 90} V${y + sy * 10} H${x + sx * 90} M${x + sx * 30} ${y + sy * 60} L${x + sx * 60} ${y + sy * 30}`}
+              stroke="rgba(250,204,21,.45)" strokeWidth="2" />
+          ))}
+          {/* title, name line and body text, as light bars */}
+          <rect x="457" y="150" width="500" height="34" rx="4" fill="rgba(34,211,238,.20)" />
+          <rect x="557" y="208" width="300" height="12" rx="3" fill="rgba(34,211,238,.14)" />
+          <path d="M387 380 H1027" stroke="rgba(250,204,21,.45)" strokeWidth="2" />
+          <rect x="487" y="330" width="440" height="30" rx="4" fill="rgba(250,204,21,.16)" />
+          {[440, 476, 512].map((y, k) => (
+            <rect key={y} x={337 + k * 30} y={y} width={740 - k * 60} height="10" rx="3" fill="rgba(34,211,238,.12)" />
+          ))}
+          {/* signatures */}
+          <path d="M180 820 H460 M954 820 H1234" stroke="rgba(34,211,238,.4)" strokeWidth="1.5" />
+          <path d="M210 800 C250 760 290 830 330 790 S410 780 430 800" stroke="rgba(34,211,238,.35)" strokeWidth="2" />
+          <path d="M990 800 C1030 770 1060 820 1110 790 S1190 785 1200 805" stroke="rgba(34,211,238,.35)" strokeWidth="2" />
+          <rect x="250" y="840" width="140" height="10" rx="3" fill="rgba(34,211,238,.12)" />
+          <rect x="1024" y="840" width="140" height="10" rx="3" fill="rgba(34,211,238,.12)" />
+          {/* seal with the Autobot crest */}
+          <circle cx="707" cy="760" r="104" stroke="rgba(250,204,21,.45)" strokeWidth="2" />
+          <circle cx="707" cy="760" r="90" stroke="rgba(250,204,21,.25)" strokeWidth="6" strokeDasharray="3 7" />
+          <image href={BASE + 'assets/logo-hd.webp'} x="637" y="690" width="140" height="140" opacity=".5" />
+        </svg>
+        <span className="cert-scan" />
+      </div>
+      {/* HUD corner brackets */}
+      {[
+        'top-24 left-4 sm:left-8 border-t-2 border-l-2',
+        'top-24 right-4 sm:right-8 border-t-2 border-r-2',
+        'bottom-6 left-4 sm:left-8 border-b-2 border-l-2',
+        'bottom-6 right-4 sm:right-8 border-b-2 border-r-2'
+      ].map((c) => (
+        <span key={c} className={`cert-corner absolute w-12 h-12 sm:w-20 sm:h-20 border-cyan-400/45 ${c}`} />
+      ))}
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_85%_70%_at_50%_45%,transparent_40%,rgba(3,5,11,.75)_100%)]" />
+    </div>
+  );
+}
+
 function CertificatePage({ onHome }: { onHome: () => void }) {
   const [optimusId, setOptimusId] = useState('');
   const [name, setName] = useState('');
@@ -3951,7 +4138,7 @@ function CertificatePage({ onHome }: { onHome: () => void }) {
       return;
     }
     if (!isCapsName(nm)) {
-      window.alert('Name must be in CAPITAL LETTERS only (for example: SANJAI KUMAR).');
+      window.alert('Name must be in CAPITAL LETTERS only (for example: JOSEPH VIJAY).');
       return;
     }
     const owner = findProfile(id);
@@ -3987,14 +4174,15 @@ function CertificatePage({ onHome }: { onHome: () => void }) {
   if (results && onResults) {
     return (
       <section className="min-h-[calc(100vh-5rem)] px-4 sm:px-6 lg:px-8 pt-8 pb-28 sm:py-14 max-w-6xl mx-auto">
+        <CertBackdrop />
         <button onClick={() => history.back()} className="inline-flex items-center gap-2 text-xs font-mono font-bold tracking-widest text-slate-300 hover:text-white">
           <ArrowLeft className="w-4 h-4" /> BACK
         </button>
         <div className="text-center max-w-2xl mx-auto mt-8 mb-10 space-y-3">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md text-xs font-mono border bg-amber-500/15 text-amber-300 border-amber-500/40">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md text-xs font-mono font-bold border bg-amber-500/80 text-white border-amber-300">
             <Award className="w-3.5 h-3.5" /> ATTENDANCE VERIFIED
           </div>
-          <h1 className="text-3xl sm:text-5xl font-black tracking-tight uppercase bg-clip-text text-transparent bg-gradient-to-r from-slate-200 via-amber-400 to-yellow-500">
+          <h1 className="text-3xl sm:text-5xl font-black tracking-tight uppercase bg-clip-text text-transparent bg-gradient-to-r from-white via-cyan-200 to-cyan-400">
             Your Certificates
           </h1>
           <p className="text-slate-300 text-sm sm:text-base">
@@ -4028,15 +4216,16 @@ function CertificatePage({ onHome }: { onHome: () => void }) {
 
   return (
     <section className="min-h-[calc(100vh-5rem)] px-4 sm:px-6 lg:px-8 pt-8 pb-28 sm:py-14 max-w-5xl mx-auto">
+      <CertBackdrop />
       <button onClick={onHome} className="inline-flex items-center gap-2 text-xs font-mono font-bold tracking-widest text-slate-300 hover:text-white">
         <ArrowLeft className="w-4 h-4" /> BACK TO HOME
       </button>
 
       <div className="text-center max-w-2xl mx-auto mt-8 mb-10 space-y-3">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md text-xs font-mono border bg-amber-500/15 text-amber-300 border-amber-500/40">
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md text-xs font-mono font-bold border bg-amber-500/80 text-white border-amber-300">
           <Award className="w-3.5 h-3.5" /> PARTICIPATION CERTIFICATE
         </div>
-        <h1 className="text-4xl sm:text-6xl font-black tracking-tight uppercase bg-clip-text text-transparent bg-gradient-to-r from-slate-200 via-amber-400 to-yellow-500">
+        <h1 className="text-4xl sm:text-6xl font-black tracking-tight uppercase bg-clip-text text-transparent bg-gradient-to-r from-white via-cyan-200 to-cyan-400">
           Get Your Certificate
         </h1>
         <p className="text-slate-300 text-sm sm:text-base">
@@ -4044,7 +4233,7 @@ function CertificatePage({ onHome }: { onHome: () => void }) {
         </p>
       </div>
 
-      <form onSubmit={submit} noValidate className="max-w-xl mx-auto rounded-3xl bg-slate-900/90 border border-slate-800 p-6 sm:p-8 space-y-5">
+      <form onSubmit={submit} noValidate className="max-w-xl mx-auto rounded-3xl bg-slate-950/90 border border-cyan-400/30 shadow-[0_30px_80px_-30px_rgba(34,211,238,.35)] backdrop-blur-sm p-6 sm:p-8 space-y-5">
         <div>
           <label htmlFor="cert-id" className="text-xs font-mono font-bold tracking-widest text-slate-400 block mb-1.5">OPTIMUS ID</label>
           <input
@@ -4055,7 +4244,7 @@ function CertificatePage({ onHome }: { onHome: () => void }) {
             placeholder="e.g. OPT27-00142"
             value={optimusId}
             onChange={(e) => setOptimusId(e.target.value.toUpperCase())}
-            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm font-mono tracking-wider focus:outline-none focus:border-amber-400"
+            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm font-mono tracking-wider focus:outline-none focus:border-cyan-400"
           />
         </div>
         <div>
@@ -4064,10 +4253,10 @@ function CertificatePage({ onHome }: { onHome: () => void }) {
             id="cert-name"
             type="text"
             autoComplete="name"
-            placeholder="e.g. SANJAI KUMAR"
+            placeholder="e.g. JOSEPH VIJAY"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm tracking-wide focus:outline-none focus:border-amber-400"
+            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm tracking-wide focus:outline-none focus:border-cyan-400"
           />
         </div>
         <button
@@ -4115,7 +4304,7 @@ function MyPassPage({ profile, onProfile, onHome }: { profile: Profile | null; o
       return;
     }
     if (!isCapsName(name)) {
-      window.alert('Name must be in CAPITAL LETTERS only (for example: SANJAI KUMAR).');
+      window.alert('Name must be in CAPITAL LETTERS only (for example: JOSEPH VIJAY).');
       return;
     }
     onProfile(createProfile({ name, email: form.email.trim(), phone: form.phone.trim(), college: form.college.trim() }));
@@ -4188,7 +4377,7 @@ function MyPassPage({ profile, onProfile, onHome }: { profile: Profile | null; o
           </div>
           <div>
             <label htmlFor="mp-name" className={label}>NAME (CAPITAL LETTERS ONLY)</label>
-            <input id="mp-name" type="text" autoComplete="name" placeholder="e.g. SANJAI KUMAR" value={form.name}
+            <input id="mp-name" type="text" autoComplete="name" placeholder="e.g. JOSEPH VIJAY" value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })} className={field} />
           </div>
           <div>
@@ -4314,12 +4503,27 @@ function TechnoFestSection() {
       // 0 when the section's top reaches the bottom of the screen, 1 once it has scrolled ~1 screen in.
       const p = Math.min(1, Math.max(0, (vh - r.top) / (vh * 1.05)));
       el.style.setProperty('--p', p.toFixed(3));
+      // Page-level transition from the hero: its HUD lifts away and fades, and the 3D arena dims into
+      // this section's dark steel so the two never meet at an edge. The dimmer lifts again before the
+      // events section, where the robots need the arena.
+      const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
+      const roster = document.getElementById('roster');
+      const leave = roster ? clamp01((vh - roster.getBoundingClientRect().top) / (vh * 0.6)) : 0;
+      const root = document.documentElement.style;
+      root.setProperty('--hero-out', clamp01((window.scrollY - vh * 0.1) / (vh * 0.6)).toFixed(3));
+      root.setProperty('--scene-dim', (clamp01((vh * 0.85 - r.top) / (vh * 0.75)) * (1 - leave)).toFixed(3));
     };
     const onScroll = () => { if (!raf) raf = requestAnimationFrame(update); };
     update();
     window.addEventListener('scroll', onScroll, { passive: true });
     window.addEventListener('resize', onScroll);
-    return () => { cancelAnimationFrame(raf); window.removeEventListener('scroll', onScroll); window.removeEventListener('resize', onScroll); };
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+      document.documentElement.style.setProperty('--hero-out', '0');
+      document.documentElement.style.setProperty('--scene-dim', '0');
+    };
   }, []);
 
   // Each word slides in from its own side; i staggers them so the headline assembles in order.
@@ -4353,7 +4557,26 @@ function TechnoFestSection() {
         className="tf-emblem absolute left-1/2 top-1/2 w-[min(70vw,640px)] -translate-x-1/2 -translate-y-1/2 opacity-[0.06] pointer-events-none select-none"
       />
       <EnergonShards className="absolute inset-0 w-full h-full" />
-      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-amber-400/60 to-transparent" />
+      {/* Energon horizon: an Autobot-visor chevron drawn outward from a bright core as the section rises,
+          sitting where the arena dissolves into the section; it fades once the section has settled */}
+      <div className="tf-horizon absolute inset-x-0 h-10 sm:h-12 pointer-events-none" aria-hidden="true">
+        <svg viewBox="0 0 1000 40" preserveAspectRatio="none" className="w-full h-full overflow-visible">
+          <defs>
+            <linearGradient id="tfHz" x1="0" y1="0" x2="1000" y2="0" gradientUnits="userSpaceOnUse">
+              <stop offset="0" stopColor="#22d3ee" stopOpacity="0" />
+              <stop offset=".3" stopColor="#22d3ee" />
+              <stop offset=".5" stopColor="#facc15" />
+              <stop offset=".7" stopColor="#22d3ee" />
+              <stop offset="1" stopColor="#22d3ee" stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          <path pathLength={1} className="tf-hz-line" d="M500 30 H545 L570 8 H1000" />
+          <path pathLength={1} className="tf-hz-line" d="M500 30 H455 L430 8 H0" />
+        </svg>
+        <span className="tf-hz-core" />
+      </div>
+      {/* Horizon glow where the arena floor meets the section: a warm haze instead of an edge line */}
+      <div className="absolute inset-x-0 top-0 h-[30vh] bg-[radial-gradient(ellipse_60%_100%_at_50%_0%,rgba(250,204,21,.10),transparent_70%)]" aria-hidden="true" />
       <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-b from-transparent to-[#03050b]" aria-hidden="true" />
       {/* Energon conduit, part 1: from under the fact panels down into the prize section */}
       <div className="pv-conduit absolute left-1/2 bottom-0 h-20 sm:h-24" aria-hidden="true"><i /><i /></div>
@@ -4488,6 +4711,8 @@ function PrizePoolSection({ onExplore }: { onExplore: () => void }) {
 
         <div className="pv-beam absolute bottom-0 left-[8%] w-[18vw] max-w-[220px] h-[85%]" />
         <div className="pv-beam pv-beam-r absolute bottom-0 right-[8%] w-[18vw] max-w-[220px] h-[85%]" />
+        {/* Vault-door chakra: kept behind the headline only, dimmed and faded out above the hackathon podium */}
+        <div className="pv-vault-wrap absolute inset-0 opacity-70">
         <svg className="pv-vault absolute left-1/2 top-[13rem] sm:top-[15rem] w-[min(120vw,980px)] h-auto" viewBox="0 0 400 400" fill="none">
           <circle cx="200" cy="200" r="196" stroke="rgba(250,204,21,.28)" strokeWidth="1.2" />
           <circle cx="200" cy="200" r="186" stroke="rgba(250,204,21,.16)" strokeWidth="7" strokeDasharray="3 9" />
@@ -4503,7 +4728,10 @@ function PrizePoolSection({ onExplore }: { onExplore: () => void }) {
           <circle cx="200" cy="200" r="190" stroke="rgba(250,204,21,.3)" strokeWidth="2" strokeDasharray="120 30" />
           <circle cx="200" cy="200" r="176" stroke="rgba(34,211,238,.18)" strokeWidth="1" />
         </svg>
+        </div>
         <div className="pv-floor absolute inset-x-0 bottom-0 h-[38%]" />
+        {/* Bottom seam: floor and light pillars dissolve into the events section's dark steel (no hard edge) */}
+        <div className="absolute inset-x-0 bottom-0 h-40 sm:h-56 bg-gradient-to-b from-transparent via-[#03050b]/75 to-[#03050b]" />
         {/* Energon conduit, part 2: continues from the section above and feeds the trophy */}
         <div className="pv-conduit absolute left-1/2 top-0 h-16 sm:h-24" aria-hidden="true"><i /><i /></div>
       </div>
@@ -4986,9 +5214,12 @@ export default function App() {
     { key: 'shockwave', card: 'right' },
     { key: 'ratchet', card: 'left' }
   ];
-  const stageRef = useRef<StageState>({ key: null, u: 0, introId: 0, introKey: '', fromU: 0, standU: 0, enterU: 0, leaveKey: '', leaveU: 0 });
+  const stageRef = useRef<StageState>({ key: null, u: 0, introId: 0, introKey: '', fromU: 0, standU: 0, enterU: 0, leaveKey: '', leaveU: 0, settled: false });
   const stagedOnce = useRef(new Set<string>());   // leaders that already did their first-time transform
   const EMPTY_STAGE = '__empty__';   // stage key that matches no leader: every robot hidden
+  const [deckPass, setDeckPass] = useState<number | null>(null);   // pass raised out of the deck (hover / focus); null = deck at rest
+  const sceneReadyRef = useRef(false);
+  sceneReadyRef.current = sceneReady;
   useEffect(() => {
     const st = stageRef.current;
     if (activeHero || subPage || gate !== 'gone') { st.key = null; return; }
@@ -4997,9 +5228,57 @@ export default function App() {
     let raf = 0;
     let lastY = window.scrollY;
     let prev: { key: string; from: number; exit: number } | null = null;   // leader on stage last update
+
+    // Scroll stop: when the user's own downward scrolling reaches a leader's card (its row pins), the page
+    // holds there until that robot has finished arriving — the full drive-in + transform the first time,
+    // otherwise just its walk to its mark. However fast you scroll, every robot stands before it leaves.
+    // Scrolling up is never held, and only wheel / touch / keyboard scrolling counts, so the TOP and HOME
+    // buttons, nav links and anything else that scrolls the page go straight through.
+    let lock: { y: number; key: string; t0: number; max: number } | null = null;
+    let lastInput = 0;
+    let lastStop: { key: string; y: number } | null = null;   // a stop never catches twice until you have moved well away
+    const SCROLL_KEYS = new Set(['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', ' ', 'End', 'Home']);
+    const onInput = (e: Event) => {
+      lastInput = performance.now();
+      if (lock && e.cancelable) e.preventDefault();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (!SCROLL_KEYS.has(e.key) || (e.target as HTMLElement)?.closest?.('input, textarea, select, [contenteditable]')) return;
+      onInput(e);
+    };
+    const holdTo = (y: number) => window.scrollTo({ top: y, behavior: 'instant' as ScrollBehavior });
+    const watchLock = () => {
+      if (!lock) return;
+      const now = performance.now();
+      if ((st.settled && st.key === lock.key && now - lock.t0 > 120) || now - lock.t0 > lock.max) { lock = null; return; }
+      if (Math.abs(window.scrollY - lock.y) > 1) holdTo(lock.y);
+      requestAnimationFrame(watchLock);
+    };
+
     const update = () => {
       raf = 0;
       const down = window.scrollY >= lastY;
+      if (lock) {
+        if (Math.abs(window.scrollY - lock.y) > 1) holdTo(lock.y);
+      } else if (down && !reduce && sceneReadyRef.current && window.innerWidth >= 1024 && performance.now() - lastInput < 500) {
+        // The first stop this scroll step crossed (a fast flick can cross several in one frame).
+        const y = window.scrollY, vh = window.innerHeight;
+        let stop: { y: number; key: string } | null = null;
+        document.querySelectorAll<HTMLElement>('[data-stage-row]').forEach((row) => {
+          const top = row.getBoundingClientRect().top + y;   // the card pins here
+          if (lastY < top - 2 && top <= y + 2 && (!stop || top < stop.y)) stop = { y: top, key: row.dataset.stageRow! };
+        });
+        if (stop && lastStop && Math.abs((stop as { y: number }).y - lastStop.y) < 4) stop = null;
+        if (lastStop && Math.abs(y - lastStop.y) > vh) lastStop = null;
+        if (stop) {
+          const { y: sy, key } = stop as { y: number; key: string };
+          lock = { y: sy, key, t0: performance.now(), max: stagedOnce.current.has(key) ? 2500 : 6500 };
+          lastStop = { key, y: sy };
+          st.settled = false;
+          holdTo(sy);
+          requestAnimationFrame(watchLock);
+        }
+      }
       lastY = window.scrollY;
       // A fast scroll can skip a leader's walk-out entirely. Whoever loses the stage is told which
       // edge to keep walking to (exit going down, back where it came from going up), so robots
@@ -5054,7 +5333,19 @@ export default function App() {
     update();
     window.addEventListener('scroll', onScroll, { passive: true });
     window.addEventListener('resize', onScroll);
-    return () => { cancelAnimationFrame(raf); window.removeEventListener('scroll', onScroll); window.removeEventListener('resize', onScroll); st.key = null; };
+    window.addEventListener('wheel', onInput, { passive: false });
+    window.addEventListener('touchmove', onInput, { passive: false });
+    window.addEventListener('keydown', onKey);
+    return () => {
+      cancelAnimationFrame(raf);
+      lock = null;
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+      window.removeEventListener('wheel', onInput);
+      window.removeEventListener('touchmove', onInput);
+      window.removeEventListener('keydown', onKey);
+      st.key = null;
+    };
   }, [activeHero, subPage, gate]);
 
   return (
@@ -5066,6 +5357,8 @@ export default function App() {
       {/* 3D leaders background */}
       <style dangerouslySetInnerHTML={{ __html: MOTION_CSS }} />
       {mount3D && <ThreeHeroBackground activeHero={activeHero} onSelectHero={goHero} intro={intro} paused={!entered} onReady={() => setSceneReady(true)} stage={stageRef} />}
+      {/* Dims the 3D arena while the techno-fest section takes over (home page only; see .scene-dim) */}
+      {!active && !subPage && <div className="scene-dim fixed inset-0 z-0 pointer-events-none" aria-hidden="true" />}
 
       {/* Transformation HUD — only on the first visit to each hero */}
       {intro && active && intro.key === active.key && (
@@ -5330,7 +5623,7 @@ export default function App() {
                 landscape projection is fixed by the camera (48° FOV): top edge ≈ 18.9vh, centre ≈ 46.2vh,
                 bottom ≈ 72.9vh. The section starts 5rem down (under the header), hence the "- 5rem". */}
             <section
-              className="relative px-4 pt-8 pb-6 sm:p-0 sm:h-[calc(100svh-5rem)] pointer-events-none"
+              className="hero-band relative px-4 pt-8 pb-6 sm:p-0 sm:h-[calc(100svh-5rem)] pointer-events-none"
               style={{ ['--tf' as string]: 'clamp(1.7rem, min(6.25vh, 7.3vw), 5.5rem)' }}
             >
               <div className={`max-w-5xl mx-auto text-center space-y-4 sm:space-y-0 ${entered ? 'scene-in' : ''}`}>
@@ -5438,7 +5731,7 @@ export default function App() {
                 the open half of each row is the 3D stage where that leader's robot stands (see stageRef). */}
             <section id="roster" className="roster-sec relative scroll-mt-24">
               {/* Continuity from the prize vault: dark steel fades away and the energon conduit carries on */}
-              <div className="pointer-events-none absolute inset-x-0 top-0 h-[40vh] bg-gradient-to-b from-[#03050b] via-[#03050b]/80 to-transparent" aria-hidden="true" />
+              <div className="pointer-events-none absolute inset-x-0 -top-1 h-[40vh] bg-gradient-to-b from-[#03050b] via-[#03050b]/80 to-transparent" aria-hidden="true" />
               <div className="pv-conduit absolute left-1/2 top-0 h-28" aria-hidden="true"><i /><i /></div>
               {/* Stage lighting: darker edges so cards and robots read over the arena */}
               <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_50%_55%,transparent_40%,rgba(3,5,11,.55)_100%)]" aria-hidden="true" />
@@ -5485,7 +5778,7 @@ export default function App() {
                           </p>
                           <div className="relative mt-6 pt-5 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-3">
                             {/* Prize pool as a big glowing figure; workshops (no prizes) show what you gain instead */}
-                            <div className="flex items-baseline gap-2.5">
+                            <div className="flex items-center gap-2.5">
                               <span
                                 className={`text-3xl sm:text-4xl font-black tracking-tight leading-none ${ht.text}`}
                                 style={{ fontStretch: '110%', textShadow: `0 0 22px ${hex}66` }}
@@ -5509,64 +5802,82 @@ export default function App() {
               </div>
             </section>
 
-            {/* Fest passes */}
-            <section id="passes" className="py-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto scroll-mt-24">
-              <div className="text-center max-w-3xl mx-auto mb-12 space-y-3">
-                <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-md text-xs font-mono border ${t.chip}`}>
-                  <Ticket className="w-3.5 h-3.5" /> FEST PASSES
+            {/* Fest passes — same arena backdrop as the events section (the 3D floor shows through,
+                dark-steel fade at the bottom, vignette edges) with the passes as a deck of
+                Cybertronian access keys: overlapping cut-corner cards, the one you point at slides
+                up out of the deck. Phones and tablets get a plain grid. */}
+            <section id="passes" className="relative scroll-mt-24">
+              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_50%_55%,transparent_40%,rgba(3,5,11,.55)_100%)]" aria-hidden="true" />
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[30vh] bg-gradient-to-t from-[#03050b] to-transparent" aria-hidden="true" />
+              <div className="relative px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto py-20 sm:py-24">
+                <div className="text-center max-w-3xl mx-auto mb-12 lg:mb-14 space-y-3">
+                  <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-md text-xs font-mono border ${t.chip}`}>
+                    <Ticket className="w-3.5 h-3.5" /> FEST PASSES
+                  </div>
+                  <h2 className="text-3xl sm:text-5xl font-black tracking-tight uppercase">CHOOSE YOUR PASS</h2>
+                  <p className="text-slate-300 text-sm sm:text-base">
+                    One pass, many arenas. Pick the access that fits your mission for Feb 4 – 5, 2027.
+                  </p>
+                  <p className="hidden lg:block text-[10px] font-mono tracking-[0.4em] text-slate-500">HOVER A PASS · CLICK TO BOOK</p>
                 </div>
-                <h2 className="text-3xl sm:text-5xl font-black tracking-tight uppercase">CHOOSE YOUR PASS</h2>
-                <p className="text-slate-400 text-sm sm:text-base">
-                  One pass, many arenas. Pick the access that fits your mission for Feb 4 – 5, 2027.
-                </p>
-              </div>
 
-              {/* Four pass cards in a row (two on tablets, one on phones): name + icon, duration,
-                  what's included, price, perks, and a full-width booking button pinned to the bottom. */}
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5">
-                {(['hackathon', 'exclusive', 'oneday', 'twoday'] as PassId[]).map((id) => {
-                  const p = passById(id);
-                  const ptk = THEME[p.theme];
-                  const meta: Record<PassId, { term: string; includes: string }> = {
-                    hackathon: { term: '24-HOUR · TEAMS OF 2 – 4', includes: 'FLAGSHIP 24-HOUR HACKATHON' },
-                    exclusive: { term: '2-DAY · ALL ACCESS', includes: 'EVERY EVENT EXCEPT THE HACKATHON' },
-                    oneday: { term: '1-DAY', includes: '1 PRESENTATION + 1 WORKSHOP + 1 NON-TECH' },
-                    twoday: { term: '2-DAY', includes: '2 PRESENTATIONS + 2 WORKSHOPS + 2 NON-TECH' }
-                  };
-                  return (
-                    <div
-                      key={p.id}
-                      className={`lift-card relative overflow-hidden rounded-3xl bg-slate-950/95 border ${ptk.ring} ${onHover(ptk.glow)} p-6 flex flex-col`}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <h3 className={`text-base sm:text-lg font-black tracking-[0.1em] uppercase whitespace-nowrap ${ptk.text}`}>{p.name}</h3>
-                        <Ticket className={`w-5 h-5 mt-0.5 shrink-0 ${ptk.text}`} />
-                      </div>
-                      <p className="mt-1 text-[11px] font-mono tracking-widest text-slate-400">{meta[id].term}</p>
-                      <span className={`mt-5 self-start px-3 py-1.5 rounded-md border text-[10px] font-mono font-bold tracking-wider ${ptk.chip}`}>
-                        {meta[id].includes}
-                      </span>
-                      <div className="mt-6 flex items-baseline gap-2">
-                        <span className="font-num font-bold leading-none text-4xl sm:text-5xl text-white">{inr(p.price)}</span>
-                        <span className="text-[11px] text-slate-400">{p.team ? 'Per Member' : 'Per Participant'}</span>
-                      </div>
-                      <div className="mt-6 h-px bg-slate-800" />
-                      <ul className="mt-5 space-y-3 text-sm text-slate-300 flex-1">
-                        {p.perks.map((perk) => (
-                          <li key={perk} className="flex items-start gap-2.5">
-                            <CheckCircle className={`w-4 h-4 mt-0.5 shrink-0 ${ptk.text}`} /> {perk}
-                          </li>
-                        ))}
-                      </ul>
-                      <button
+                <div className={`pass-deck ${deckPass === null ? 'is-rest' : ''}`} onMouseLeave={() => setDeckPass(null)}>
+                  {(['hackathon', 'exclusive', 'oneday', 'twoday'] as PassId[]).map((id, i, all) => {
+                    const p = passById(id);
+                    const hex = CURSOR_HEX[p.theme];
+                    const meta: Record<PassId, { term: string; tag: string }> = {
+                      hackathon: { term: '24-HOUR · TEAMS OF 2 – 4', tag: 'FLAGSHIP' },
+                      exclusive: { term: '2-DAY · ALL ACCESS', tag: 'ALL ACCESS' },
+                      oneday: { term: '1-DAY · FEB 4 OR 5', tag: 'DAY PASS' },
+                      twoday: { term: '2-DAY · FEB 4 & 5', tag: 'BOTH DAYS' }
+                    };
+                    const on = deckPass === i;
+                    return (
+                      <div
+                        key={p.id}
+                        className={`pass-card ${on ? 'pass-on' : ''}`}
+                        style={{ ['--c' as string]: hex, zIndex: on ? 20 : deckPass === null ? all.length - i : all.length - Math.abs(i - deckPass) }}
+                        onMouseEnter={() => setDeckPass(i)}
+                        onFocus={() => setDeckPass(i)}
                         onClick={() => openRegister(p.id)}
-                        className={`mt-7 w-full py-3.5 rounded-xl ${ptk.btn} text-[11px] font-black tracking-widest flex items-center justify-center gap-2 transition-transform active:scale-[0.98]`}
                       >
-                        <Ticket className="w-4 h-4" /> BOOK {p.name} <span className="opacity-70">| {inr(p.price)}</span>
-                      </button>
-                    </div>
-                  );
-                })}
+                        <div className="pass-in">
+                          {/* Header strip: index, name, energon hazard stripes, access tag */}
+                          <div className="pass-head">
+                            <span className="font-mono text-[11px] font-bold" style={{ color: hex }}>{String(i + 1).padStart(2, '0')}</span>
+                            <h3 className="text-sm sm:text-base font-black tracking-[0.12em] uppercase text-white whitespace-nowrap">{p.name}</h3>
+                            <span className="pass-hatch" aria-hidden="true" />
+                            <span className="ml-auto font-mono text-[9px] tracking-[0.3em] text-slate-400 whitespace-nowrap lg:hidden xl:inline">{meta[id].tag}</span>
+                          </div>
+                          <div className="relative p-6 sm:p-7 flex flex-col flex-1">
+                            <p className="text-[11px] font-mono tracking-widest" style={{ color: hex }}>{meta[id].term}</p>
+                            <p className="mt-2 text-slate-300 text-sm leading-relaxed min-h-[2.75rem]">{p.blurb}</p>
+                            <div className="mt-5 flex items-baseline gap-2">
+                              <span className="font-num font-bold leading-none text-4xl sm:text-5xl text-white">{inr(p.price)}</span>
+                              <span className="text-[11px] text-slate-400">{p.team ? 'Per Member' : 'Per Participant'}</span>
+                            </div>
+                            <ul className="mt-5 space-y-2.5 text-sm text-slate-300 flex-1">
+                              {p.perks.map((perk) => (
+                                <li key={perk} className="flex items-start gap-2.5">
+                                  <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rotate-45" style={{ background: hex }} /> {perk}
+                                </li>
+                              ))}
+                            </ul>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); openRegister(p.id); }}
+                              className="pass-book mt-7 self-start inline-flex items-center gap-2 font-mono text-[11px] font-bold tracking-[0.3em]"
+                              style={{ color: hex }}
+                            >
+                              BOOK PASS <ChevronRight className="w-4 h-4" />
+                            </button>
+                            {/* Big outlined index, bottom-right, like a stamped part number */}
+                            <span className="pass-num" aria-hidden="true">{String(i + 1).padStart(2, '0')}</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </section>
 
@@ -5576,7 +5887,7 @@ export default function App() {
           <section key={active.key} className="min-h-[calc(100vh-5rem)] px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto py-10">
             <button
               onClick={goHome}
-              className="inline-flex items-center gap-2 text-xs font-mono font-bold tracking-widest text-slate-400 hover:text-white mb-8"
+              className="inline-flex items-center gap-2 text-xs font-mono font-bold tracking-widest text-white hover:opacity-80 mb-8"
             >
               <ArrowLeft className="w-4 h-4" /> BACK TO ROSTER
             </button>
@@ -5584,7 +5895,7 @@ export default function App() {
             <div className="grid lg:grid-cols-2 gap-10 items-start">
               {/* Left: identity (the 3D figure sits behind, visible around this column) */}
               <div className="space-y-6 lg:sticky lg:top-28 hero-in" style={{ animationDelay: introDelay(0) }}>
-                <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-md text-xs font-mono border ${t.chip}`}>
+                <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-md text-xs font-mono font-bold border ${t.ring} bg-slate-900/70 text-white`}>
                   <span className={`h-2 w-2 rounded-full ${t.dot} animate-pulse`} /> {active.faction} · {active.role}
                 </div>
                 <h1 className={`text-5xl sm:text-7xl font-black tracking-tight uppercase bg-clip-text text-transparent bg-gradient-to-r ${t.titleGrad}`}>
@@ -5592,26 +5903,27 @@ export default function App() {
                 </h1>
                 <p className={`text-lg sm:text-2xl font-extrabold tracking-wide uppercase ${t.text}`}>{active.tagline}</p>
                 <p className="text-slate-300 leading-relaxed text-sm sm:text-base max-w-lg">{active.lore}</p>
-                {(active.kind === 'main' || active.prizePool) && (
-                  <div className="flex flex-wrap gap-3">
-                    {active.kind === 'main' && (
-                      <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl border ${t.ring} ${t.glow} bg-slate-900/70 text-xs font-mono font-bold tracking-widest ${t.text}`}>
-                        ★ FLAGSHIP MAIN EVENT
-                      </div>
-                    )}
-                    {active.prizePool && (
-                      <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl border ${t.ring} bg-slate-900/70 text-xs font-mono font-bold tracking-widest ${t.text}`}>
-                        <Trophy className="w-4 h-4" /> {inr(active.prizePool)} PRIZE POOL
-                      </div>
-                    )}
-                  </div>
-                )}
-                <div className="flex flex-wrap gap-3 pt-2">
-                  <button onClick={() => openRegister(active.kind === 'main' ? 'hackathon' : 'oneday')} className={`px-6 py-3 rounded-xl ${t.btn} text-xs font-black tracking-widest`}>
+                {/* Prize pool as a big glowing figure (same style as the home page's event cards);
+                    the workshop arena shows what you gain instead */}
+                <div className="flex items-center gap-3">
+                  <span
+                    className={`text-4xl sm:text-5xl font-black tracking-tight leading-none ${t.text}`}
+                    style={{ fontStretch: '110%', textShadow: `0 0 26px ${CURSOR_HEX[active.theme]}66` }}
+                  >
+                    {active.prizePool ? inr(active.prizePool) : 'HANDS-ON'}
+                  </span>
+                  <span className="font-mono text-[11px] sm:text-xs font-bold tracking-[0.25em] text-slate-300 leading-tight">
+                    {active.prizePool ? <>PRIZE<br />POOL</> : <>EXPERIENCE<br />+ CERTIFICATE</>}
+                  </span>
+                </div>
+                <div className="pt-1">
+                  <button onClick={() => openRegister(active.kind === 'main' ? 'hackathon' : 'oneday')} className={`px-7 py-3.5 rounded-xl ${t.btn} text-xs sm:text-sm font-black tracking-widest`}>
                     REGISTER FOR {active.name}
                   </button>
+                </div>
+                <div className="flex flex-wrap gap-3">
                   {HEROES.filter((h) => h.key !== active.key).map((h) => (
-                    <button key={h.key} onClick={() => goHero(h.key)} className="px-4 py-3 rounded-xl bg-slate-900/90 border border-slate-800 hover:bg-slate-800 text-slate-300 text-[11px] font-mono font-bold tracking-widest">
+                    <button key={h.key} onClick={() => goHero(h.key)} className="px-4 py-3 rounded-xl bg-slate-900/90 border border-slate-800 hover:bg-slate-800 text-slate-200 text-[11px] font-mono font-bold tracking-widest">
                       {h.name} →
                     </button>
                   ))}
@@ -5620,9 +5932,15 @@ export default function App() {
 
               {/* Right: events under this leader */}
               <div className="space-y-4">
-                <h2 className="text-xs font-mono tracking-widest text-slate-400 uppercase mb-2">
-                  EVENTS UNDER {active.name} · {active.events.length}
-                </h2>
+                {/* Heading for the list: enters with the event cards, after the robot has arrived */}
+                <div className="hero-in flex items-center gap-3 pb-1" style={{ animationDelay: introDelay(0.04) }}>
+                  <span className={`h-2.5 w-2.5 shrink-0 rotate-45 ${t.dot}`} />
+                  <h2 className="text-lg sm:text-xl font-black uppercase tracking-wide text-white whitespace-nowrap" style={{ fontStretch: '110%' }}>
+                    Events under <span className={t.text}>{active.name}</span>
+                  </h2>
+                  <span className={`shrink-0 px-2.5 py-0.5 rounded-md border text-xs font-mono font-bold ${t.chip}`}>{active.events.length}</span>
+                  <span className="flex-1 h-px bg-gradient-to-r from-slate-500/60 to-transparent" />
+                </div>
                 {active.events.map((ev, i) => (
                   <div
                     key={ev.id}
@@ -5632,37 +5950,15 @@ export default function App() {
                   >
                     <div className="flex items-start justify-between gap-4">
                       <div className="space-y-2">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className={`text-[10px] font-mono px-2.5 py-1 rounded border ${t.chip}`}>{ev.tag}</span>
-                          {ev.placeholder && (
-                            <span className="text-[10px] font-mono px-2.5 py-1 rounded border border-slate-700 text-slate-500">PLACEHOLDER</span>
-                          )}
-                        </div>
-                        {/* Flagship prize pool, shown big above the hackathon title */}
-                        {ev.id === 'hackathon' && (
-                          <div className="flex items-center gap-3 pt-1">
-                            <Trophy className="w-9 h-9 text-amber-300 drop-shadow-[0_0_12px_rgba(250,204,21,0.5)] shrink-0" />
-                            <span className="gold-text font-mono font-black leading-none tracking-tight" style={{ fontSize: 'clamp(2.4rem, 5vw, 3.6rem)' }}>{ev.prize}</span>
-                            <span className="text-[11px] sm:text-xs font-mono font-bold tracking-[0.3em] text-amber-200 uppercase leading-tight">Prize<br />Pool</span>
-                          </div>
-                        )}
                         <h3 className={`text-xl font-black tracking-wide uppercase ${t.hoverText} transition-colors`}>{ev.title}</h3>
-                        <p className="text-slate-400 text-sm max-w-md">{ev.desc}</p>
+                        <p className="text-slate-300 text-sm leading-relaxed max-w-md">{ev.desc}</p>
                       </div>
                       <span className="p-2.5 rounded-xl bg-slate-800 text-slate-200 group-hover:bg-slate-700 transition-colors shrink-0">
                         <ChevronRight className="w-5 h-5" />
                       </span>
                     </div>
-                    <div className="mt-5 pt-4 border-t border-slate-800/80 grid grid-cols-2 gap-4 text-xs font-mono">
-                      <div>
-                        <span className="text-slate-500 uppercase block text-[10px]">Team</span>
-                        <span className="text-slate-200">{ev.team}</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-500 uppercase block text-[10px]">{ev.prize.startsWith('₹') ? 'Prize Pool' : 'Prize'}</span>
-                        <span className={t.text}>{ev.prize}</span>
-                      </div>
-                    </div>
+                    <EventFacts ev={ev} t={t} />
+                    <EventPrize ev={ev} hex={CURSOR_HEX[active.theme]} t={t} />
                   </div>
                 ))}
               </div>
@@ -5685,28 +5981,35 @@ export default function App() {
             <button onClick={() => setSelectedEvent(null)} className="absolute top-6 right-6 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white">
               <X className="w-5 h-5" />
             </button>
-            <div className="space-y-2">
-              <span className={`text-[10px] font-mono px-2.5 py-1 rounded border ${t.chip}`}>{selectedEvent.tag}</span>
-              {selectedEvent.id === 'hackathon' && (
-                          <div className="flex items-center gap-3 pt-1">
-                            <Trophy className="w-9 h-9 text-amber-300 drop-shadow-[0_0_12px_rgba(250,204,21,0.5)] shrink-0" />
-                            <span className="gold-text font-mono font-black leading-none tracking-tight" style={{ fontSize: 'clamp(2.2rem, 7vw, 3rem)' }}>{selectedEvent.prize}</span>
-                            <span className="text-[11px] sm:text-xs font-mono font-bold tracking-[0.3em] text-amber-200 uppercase leading-tight">Prize<br />Pool</span>
-                          </div>
-                        )}
-              <h3 className="text-2xl font-black uppercase">{selectedEvent.title}</h3>
-              <p className="text-xs font-mono text-slate-500">Commanded by {active?.name}</p>
+            <div className="space-y-2 pr-12">
+              {/* Every event opens with its prize up top (workshops: what you take home) */}
+              <div className="flex items-center gap-3">
+                {selectedEvent.prize.startsWith('₹')
+                  ? <Trophy className={`w-9 h-9 shrink-0 ${t.text}`} style={{ filter: `drop-shadow(0 0 12px ${hexOf(t)}88)` }} />
+                  : <Award className={`w-9 h-9 shrink-0 ${t.text}`} style={{ filter: `drop-shadow(0 0 12px ${hexOf(t)}88)` }} />}
+                <span className={`font-black leading-none tracking-tight ${t.text}`} style={{ fontSize: 'clamp(2rem, 7vw, 3rem)', fontStretch: '110%', textShadow: `0 0 24px ${hexOf(t)}55` }}>
+                  {selectedEvent.prize.startsWith('₹') ? selectedEvent.prize : 'CERTIFIED'}
+                </span>
+                <span className="text-[11px] sm:text-xs font-mono font-bold tracking-[0.3em] text-slate-300 uppercase leading-tight">
+                  {selectedEvent.prize.startsWith('₹') ? <>Prize<br />Pool</> : <>Hands-on<br />Workshop</>}
+                </span>
+              </div>
+              <h3 className="text-2xl font-black uppercase pt-1">{selectedEvent.title}</h3>
+              <p className="text-xs font-mono text-slate-400">Commanded by {active?.name}</p>
             </div>
             <p className="text-slate-300 text-sm leading-relaxed">{selectedEvent.desc}</p>
-            <div className="grid grid-cols-2 gap-4 p-4 rounded-2xl bg-slate-950 border border-slate-800">
-              <div>
-                <span className="text-[10px] font-mono text-slate-500 uppercase block">Team Size</span>
-                <span className="text-sm font-bold text-slate-200">{selectedEvent.team}</span>
-              </div>
-              <div>
-                <span className="text-[10px] font-mono text-slate-500 uppercase block">{selectedEvent.prize.startsWith('₹') ? 'Prize Pool' : 'Prize'}</span>
-                <span className={`text-sm font-black ${t.text} font-mono`}>{selectedEvent.prize}</span>
-              </div>
+            <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800">
+              <EventFacts ev={selectedEvent} t={t} bare />
+              {selectedEvent.split && (
+                <div className="mt-4 pt-4 border-t border-slate-800/80 grid grid-cols-3 gap-3 font-mono">
+                  {selectedEvent.split.map((amt, k) => (
+                    <div key={k}>
+                      <span className="text-slate-500 uppercase block text-[10px] tracking-wider">{['1st Prize', '2nd Prize', '3rd Prize'][k]}</span>
+                      <span className={`text-sm font-black ${['pz-gold', 'pz-silver', 'pz-bronze'][k]}`}>{inr(amt)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="space-y-2">
               <h4 className="text-xs font-mono uppercase text-slate-400 tracking-wider">Rules &amp; Protocols</h4>

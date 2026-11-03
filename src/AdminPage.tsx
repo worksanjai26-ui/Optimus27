@@ -258,7 +258,7 @@ function EventEditor({ ev, override, onSaved }: { ev: EventItem; override?: Reco
       </div>
       <div className="grid sm:grid-cols-2 gap-3">
         <div className="sm:col-span-2"><label className={label}>TITLE</label><input value={draft.title} onChange={(e) => set('title', e.target.value)} className={input} /></div>
-        <div><label className={label}>TAG</label><input value={draft.tag} onChange={(e) => set('tag', e.target.value)} className={input} /></div>
+        <div><label className={label}>DOMAIN</label><input value={draft.tag} onChange={(e) => set('tag', e.target.value)} className={input} /></div>
         <div><label className={label}>TEAM</label><input value={draft.team} onChange={(e) => set('team', e.target.value)} className={input} /></div>
         <div><label className={label}>PRIZE</label><input value={draft.prize} onChange={(e) => set('prize', e.target.value)} className={input} /></div>
         <label className="flex items-center gap-2 text-xs text-slate-300 self-end pb-2">
