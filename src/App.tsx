@@ -1139,7 +1139,7 @@ const ThreeHeroBackground = ({
 
     /* ---------- renderer / camera ---------- */
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x0b1628, 0.014);
+    scene.fog = new THREE.FogExp2(0x0b1628, 0.0105);   // lighter haze: the leaders in the distance stay crisp
 
     const camera = new THREE.PerspectiveCamera(48, size0.w / size0.h, 0.5, 400);
     camera.position.set(0, 2.2, 18);
@@ -1156,7 +1156,9 @@ const ThreeHeroBackground = ({
       window.devicePixelRatio,
       lite ? 1 : isPhone ? (strongDevice ? 1.5 : 1.25) : tier === 'high' ? 1.5 : 1.25
     );
-    const DPR_MIN = lite ? 0.5 : 0.7;
+    // Never render below the screen's real pixels (0.85 on the weakest devices): a lower scale is what made the
+    // leaders look blurry. A slow device now sheds effects (bloom, mirror floor, shadows) first, which keeps them sharp.
+    const DPR_MIN = Math.min(DPR_MAX, lite ? 0.85 : 1);
     let dprCap = DPR_MAX;   // lowered once effects have been shed, so the scale never creeps back up into lag
     let dpr = DPR_MAX;
     renderer.setSize(size0.w, size0.h);
@@ -2902,7 +2904,8 @@ const ThreeHeroBackground = ({
     // multisampled target to keep edges clean.
     // Lite mode skips the whole chain: four full-screen passes plus bloom's blur
     // pyramid are what weak GPUs choke on.
-    const samples = lowPower ? 0 : Math.min(isPhone ? 2 : 4, renderer.capabilities.maxSamples);
+    // Edge smoothing on every tier that uses the composer (2 samples on lighter devices, 4 on strong desktops).
+    const samples = Math.min(lowPower || isPhone ? 2 : 4, renderer.capabilities.maxSamples);
     const composer = lite ? null : new EffectComposer(renderer, new THREE.WebGLRenderTarget(size0.w, size0.h, { type: THREE.HalfFloatType, samples }));
     composer?.setSize(size0.w, size0.h);
     composer?.setPixelRatio(dpr);
