@@ -1,10 +1,11 @@
 /* ------------------------------------------------------------------ *
  *  Excel (.xlsx) export for the admin panel: one sheet of participants and
- *  one sheet per pass, laid out like the organisers' Google Sheet
- *  (see functions/index.js), so both show the same columns.
+ *  one sheet per pass, then the gate-entry and event-attendance scans.
  * ------------------------------------------------------------------ */
 import type { Registration } from './adminData';
 import type { Profile } from './identity';
+import type { AttendanceRow } from './backend';
+import { HEROES } from './App';
 
 type Cell = string | number | { value: string | number; fontWeight?: 'bold' };
 export type SheetSpec = { sheet: string; data: Cell[][]; columns: { width: number }[]; stickyRowsCount: number };
@@ -22,7 +23,7 @@ const dayLabel = (r: Registration) =>
   r.pass === 'oneday' ? (r.day == null ? '' : FEST_DAYS[r.day] ?? '') : r.pass === 'hackathon' ? 'FEB 4-5 (24 HOURS)' : 'FEB 4 & 5';
 const when = (iso: string) => new Date(iso).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
 
-export const buildSheets = (registrations: Registration[], profiles: Profile[]): SheetSpec[] => {
+export const buildSheets = (registrations: Registration[], profiles: Profile[], attendance: AttendanceRow[]): SheetSpec[] => {
   const sheets: SheetSpec[] = [{
     sheet: 'Participants',
     data: [
@@ -49,12 +50,30 @@ export const buildSheets = (registrations: Registration[], profiles: Profile[]):
       stickyRowsCount: 1
     });
   }
+
+  // What the QR scanners recorded: who came through the gate each day, and who attended which event.
+  const title = (id: string | null) => HEROES.flatMap((h) => h.events).find((e) => e.id === id)?.title ?? id ?? '';
+  const scanCols = [{ width: 14 }, { width: 26 }, { width: 34 }, { width: 18 }, { width: 22 }, { width: 28 }, { width: 10 }];
+  const scanRow = (a: AttendanceRow): Cell[] => [a.optimusId, a.name, a.college, FEST_DAYS[a.day] ?? '', when(a.at), a.by, a.manual ? 'YES' : ''];
+  sheets.push({
+    sheet: 'Gate Entry',
+    data: [head(['Optimus ID', 'Name', 'College', 'Day', 'Scanned at', 'Scanned by', 'Manual']), ...attendance.filter((a) => a.kind === 'entry').map(scanRow)],
+    columns: scanCols, stickyRowsCount: 1
+  });
+  sheets.push({
+    sheet: 'Event Attendance',
+    data: [
+      head(['Optimus ID', 'Name', 'College', 'Day', 'Scanned at', 'Scanned by', 'Manual', 'Event']),
+      ...attendance.filter((a) => a.kind === 'event').map((a): Cell[] => [...scanRow(a), title(a.eventId)])
+    ],
+    columns: [...scanCols, { width: 28 }], stickyRowsCount: 1
+  });
   return sheets;
 };
 
 /** Builds the workbook and downloads it in the browser. */
-export const downloadWorkbook = async (registrations: Registration[], profiles: Profile[]) => {
+export const downloadWorkbook = async (registrations: Registration[], profiles: Profile[], attendance: AttendanceRow[]) => {
   const { default: writeXlsxFile } = await import('write-excel-file/browser');
   const stamp = new Date().toISOString().slice(0, 10);
-  await writeXlsxFile(buildSheets(registrations, profiles) as Parameters<typeof writeXlsxFile>[0]).toFile(`optimus27-registrations-${stamp}.xlsx`);
+  await writeXlsxFile(buildSheets(registrations, profiles, attendance) as Parameters<typeof writeXlsxFile>[0]).toFile(`optimus27-registrations-${stamp}.xlsx`);
 };

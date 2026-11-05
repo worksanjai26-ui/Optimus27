@@ -4,9 +4,9 @@ import {
 } from 'lucide-react';
 import { Registration, Announcement, Overrides, VisitStats, getVisitStats } from './adminData';
 import {
-  FIREBASE_ENABLED, AuthUser, watchUser, signInWithGoogle, signOutUser, isAdminEmail, backendError,
-  adminListRegistrations, adminListProfiles, adminDeleteRegistration,
-  remoteOverrides, remoteSaveOverride, remoteDeleteOverride,
+  BACKEND_ENABLED, AuthUser, watchUser, signInWithGoogle, signOutUser, isAdminEmail, backendError,
+  adminListRegistrations, adminListProfiles, adminListAttendance, adminDeleteRegistration,
+  AttendanceRow, remoteOverrides, remoteSaveOverride, remoteDeleteOverride,
   remoteAnnouncements, remoteAddAnnouncement, remoteSetAnnouncementActive, remoteDeleteAnnouncement
 } from './backend';
 import { downloadWorkbook } from './exportExcel';
@@ -43,7 +43,7 @@ function Shell({ children, onSignOut }: { children: React.ReactNode; onSignOut?:
 
 /* ============================== LOGIN ============================= */
 // There is no password anywhere in this site. Admins sign in with their Google account; whether that
-// account may see anything is decided by the server (firestore.rules and the Cloud Functions).
+// account may see anything is decided by the server (row-level security in supabase/schema.sql).
 function Login() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -131,7 +131,8 @@ function RegistrationsTab() {
   const exportExcel = async () => {
     setExporting(true);
     try {
-      await downloadWorkbook(rows, await adminListProfiles());
+      const [profiles, attendance] = await Promise.all([adminListProfiles(), adminListAttendance()]);
+      await downloadWorkbook(rows, profiles, attendance);
     } catch (e) {
       alert(backendError(e));
     } finally {
@@ -420,15 +421,110 @@ function AnnouncementsTab() {
 }
 
 /* ============================== PAGE ============================== */
+/* ============================ ATTENDANCE =========================== */
+// Live view of what the scanners recorded: gate entry per day, and who attended each event.
+const eventName = (id: string | null) => HEROES.flatMap((h) => h.events).find((e) => e.id === id)?.title ?? id ?? '';
+const time = (iso: string) => new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+
+function AttendanceTab() {
+  const [rows, setRows] = useState<AttendanceRow[]>([]);
+  const [regs, setRegs] = useState<Registration[]>([]);
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [view, setView] = useState<'entry' | string>('entry');   // 'entry' or an event id
+  const [query, setQuery] = useState('');
+
+  const load = () => {
+    setStatus('loading');
+    Promise.all([adminListAttendance(), adminListRegistrations()]).then(([a, r]) => { setRows(a); setRegs(r); setStatus('ready'); }, () => setStatus('error'));
+  };
+  useEffect(load, []);
+  useEffect(() => { const t = setInterval(load, 30000); return () => clearInterval(t); }, []);
+
+  const entry = rows.filter((r) => r.kind === 'entry');
+  const eventRows = rows.filter((r) => r.kind === 'event');
+  const allEvents = HEROES.flatMap((h) => h.events);
+  const q = query.trim().toLowerCase();
+  const shown = (view === 'entry' ? entry : eventRows.filter((r) => r.eventId === view))
+    .filter((r) => !q || [r.name, r.optimusId, r.college].some((v) => v.toLowerCase().includes(q)));
+
+  const stat = (title: string, value: number, note: string, tone = 'text-cyan-400') => (
+    <div className="p-4 rounded-xl bg-slate-900 border border-slate-800">
+      <div className={label}>{title}</div>
+      <div className={`text-2xl font-black ${tone}`}>{value}</div>
+      <div className="text-[11px] text-slate-500">{note}</div>
+    </div>
+  );
+  const chip = (on: boolean) => `px-3 py-2 rounded-lg border text-[11px] font-mono font-bold tracking-widest whitespace-nowrap ${on ? 'border-amber-500/50 text-amber-400 bg-slate-900' : 'border-slate-800 text-slate-400 hover:text-white'}`;
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {stat('REGISTRATIONS', regs.length, 'passes registered')}
+        {stat('AT THE GATE · DAY 1', entry.filter((r) => r.day === 0).length, FEST_DAYS[0], 'text-emerald-400')}
+        {stat('AT THE GATE · DAY 2', entry.filter((r) => r.day === 1).length, FEST_DAYS[1], 'text-emerald-400')}
+        {stat('EVENT SCANS', eventRows.length, 'across all events', 'text-amber-400')}
+      </div>
+
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        <button onClick={() => setView('entry')} aria-pressed={view === 'entry'} className={chip(view === 'entry')}>GATE ENTRY · {entry.length}</button>
+        {allEvents.map((e) => (
+          <button key={e.id} onClick={() => setView(e.id)} aria-pressed={view === e.id} className={chip(view === e.id)}>
+            {e.title} · {eventRows.filter((r) => r.eventId === e.id).length}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name, Optimus ID, college" className={`${input} pl-9`} />
+        </div>
+        <button onClick={load} className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-slate-800 text-slate-300 hover:text-white text-xs font-mono"><RotateCcw className="w-3.5 h-3.5" /> REFRESH</button>
+      </div>
+
+      {status === 'error' && <p role="alert" className="text-xs font-mono text-rose-400">Could not load attendance. Check your connection and that this Google account is an admin.</p>}
+      {status === 'loading' && !rows.length && <p className="text-xs font-mono text-slate-500">Loading…</p>}
+
+      <div className="rounded-2xl bg-slate-900 border border-slate-800 overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left border-b border-slate-800">
+              {['OPTIMUS ID', 'NAME', 'COLLEGE', 'DAY', 'SCANNED AT', 'BY'].map((h) => <th key={h} className={`${label} px-4 py-3 mb-0`}>{h}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {shown.map((r, i) => (
+              <tr key={i} className="border-b border-slate-800/70 last:border-0">
+                <td className="px-4 py-2.5 font-mono text-amber-300 whitespace-nowrap">{r.optimusId}</td>
+                <td className="px-4 py-2.5 font-bold text-slate-100">{r.name}</td>
+                <td className="px-4 py-2.5 text-slate-400">{r.college}</td>
+                <td className="px-4 py-2.5 text-slate-300 whitespace-nowrap">{FEST_DAYS[r.day]}</td>
+                <td className="px-4 py-2.5 text-slate-300 whitespace-nowrap">{time(r.at)}{r.manual && <span className="ml-2 text-[10px] font-mono text-amber-400">MANUAL</span>}</td>
+                <td className="px-4 py-2.5 text-slate-500 truncate max-w-[12rem]">{r.by}</td>
+              </tr>
+            ))}
+            {!shown.length && status !== 'loading' && (
+              <tr><td colSpan={6} className="px-4 py-8 text-center text-xs font-mono text-slate-500">
+                No {view === 'entry' ? 'gate check-ins' : `scans for ${eventName(view)}`} yet.
+              </td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 const TABS = [
   { id: 'registrations', label: 'REGISTRATIONS', icon: Users },
+  { id: 'attendance', label: 'ATTENDANCE', icon: UserCheck },
   { id: 'events', label: 'EVENTS', icon: Calendar },
   { id: 'announcements', label: 'ANNOUNCEMENTS', icon: Megaphone }
 ] as const;
 
 export default function AdminPage() {
   const [user, setUser] = useState<AuthUser | null>(null);
-  const [ready, setReady] = useState(!FIREBASE_ENABLED);
+  const [ready, setReady] = useState(!BACKEND_ENABLED);
   const [tab, setTab] = useState<(typeof TABS)[number]['id']>('registrations');
 
   useEffect(() => {
@@ -437,12 +533,12 @@ export default function AdminPage() {
   }, []);
   useEffect(() => watchUser((u) => { setUser(u); setReady(true); }), []);
 
-  if (!FIREBASE_ENABLED) {
+  if (!BACKEND_ENABLED) {
     return (
       <Shell>
         <div className="max-w-md mx-auto mt-16 p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-3 text-sm text-slate-400">
           <h1 className="text-lg font-black tracking-wide uppercase text-slate-100">Admin not configured</h1>
-          <p>The admin panel needs the Firebase backend. Add the <code className="text-amber-400">VITE_FIREBASE_*</code> values (see <code className="text-amber-400">README-FIREBASE.md</code>) and rebuild.</p>
+          <p>The admin panel needs the Supabase backend. Add the <code className="text-amber-400">VITE_SUPABASE_*</code> values (see <code className="text-amber-400">README-SUPABASE.md</code>) and rebuild.</p>
         </div>
       </Shell>
     );
@@ -476,6 +572,7 @@ export default function AdminPage() {
         ))}
       </nav>
       {tab === 'registrations' && <RegistrationsTab />}
+      {tab === 'attendance' && <AttendanceTab />}
       {tab === 'events' && <EventsTab />}
       {tab === 'announcements' && <AnnouncementsTab />}
     </Shell>

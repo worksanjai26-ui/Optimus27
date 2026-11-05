@@ -26,17 +26,11 @@ jobs:
       - run: npm ci
       - run: npm run build
         env:
-          # Firebase web-app config. Set these as repository *variables* (Settings > Secrets and variables >
-          # Actions > Variables). They are identifiers, not secrets; the data is protected by firestore.rules
-          # and the Cloud Functions. Leave them unset and the site runs in browser-only demo mode.
-          VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
-          VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
-          VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
-          VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
-          VITE_FIREBASE_STORAGE_BUCKET: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
-          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.VITE_FIREBASE_MESSAGING_SENDER_ID }}
-          VITE_FIREBASE_FUNCTIONS_REGION: ${{ vars.VITE_FIREBASE_FUNCTIONS_REGION }}
-          VITE_RECAPTCHA_SITE_KEY: ${{ vars.VITE_RECAPTCHA_SITE_KEY }}
+          # Supabase project URL and anon key. Set them as repository *variables* (Settings > Secrets and
+          # variables > Actions > Variables). They are public identifiers, not secrets: the data is protected
+          # by row-level security (supabase/schema.sql). Leave them unset and the site runs in demo mode.
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

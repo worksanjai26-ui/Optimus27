@@ -1,8 +1,8 @@
 /* ------------------------------------------------------------------ *
- *  Browser-only fallback data, used when the Firebase backend is not
+ *  Browser-only fallback data, used when the Supabase backend is not
  *  configured (see src/backend.ts for the real thing). Everything here
  *  lives in this browser's localStorage, so nothing is shared. The admin
- *  panel no longer works without Firebase: there is no password in the
+ *  panel does not work without the backend: there is no password in the
  *  site any more, admins sign in with Google.
  * ------------------------------------------------------------------ */
 
