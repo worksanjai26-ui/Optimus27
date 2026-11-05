@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import * as THREE from 'three';
 import { Reflector } from 'three/addons/objects/Reflector.js';
 import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
@@ -1073,6 +1073,9 @@ if (typeof document !== 'undefined') document.documentElement.classList.add(`tie
 // the screen, or the certificate page's backdrop). The render loop idles then, which frees the
 // GPU / CPU for scrolling on phones and integrated-graphics laptops.
 export const sceneGate = { scroll: false, page: false, glide: false };
+// While the first-time EXPLORE transition runs it drives the techno-fest vars itself (time-based),
+// so the section's own scroll handler stands aside.
+const tfDrive = { on: false };
 
 export type StageState = {
   key: string | null;
@@ -1477,15 +1480,19 @@ const ThreeHeroBackground = ({
 
     /* ---------- info + sponsor stands standing on the arena floor (home view) ---------- */
     const standMQ = window.matchMedia('(min-width: 768px) and (min-aspect-ratio: 6/5)');
+    // Drawn at 2× (w, h stay the logical size) with full anisotropic filtering, so the small
+    // labels stay sharp on the tilted floor stands even when the scene renders at a reduced scale.
     const liveCanvas = (w: number, h: number) => {
       const c = document.createElement('canvas');
-      c.width = w;
-      c.height = h;
+      c.width = w * 2;
+      c.height = h * 2;
+      const g = c.getContext('2d')!;
+      g.scale(2, 2);
       const t = new THREE.CanvasTexture(c);
       t.colorSpace = THREE.SRGBColorSpace;
-      t.anisotropy = 8;
+      t.anisotropy = renderer.capabilities.getMaxAnisotropy();
       textures.push(t);
-      return { g: c.getContext('2d')!, t, w, h };
+      return { g, t, w, h };
     };
     type LiveCanvas = ReturnType<typeof liveCanvas>;
     const spaced = (g: CanvasRenderingContext2D, px: number) => {
@@ -1524,18 +1531,18 @@ const ThreeHeroBackground = ({
       g.textBaseline = 'alphabetic';
       g.textAlign = 'left';
       const section = (y: number, label: string, labelCol: string, value: string, valueCol: string, sub: string) => {
-        spaced(g, 9);
-        g.font = `600 30px ${fontFace}`;
+        spaced(g, 7);
+        g.font = `700 32px ${fontFace}`;
         g.fillStyle = labelCol;
         g.fillText(label, 64, y);
         spaced(g, 1);
-        g.font = `700 70px ${fontFace}`;
+        g.font = `800 72px ${fontFace}`;
         g.fillStyle = valueCol;
         g.fillText(value, 60, y + 88);
-        spaced(g, 6);
-        g.font = `500 24px ${fontFace}`;
-        g.fillStyle = 'rgba(148,163,184,0.75)';
-        g.fillText(sub, 64, y + 132);
+        spaced(g, 5);
+        g.font = `600 27px ${fontFace}`;
+        g.fillStyle = 'rgba(176,190,210,0.9)';
+        g.fillText(sub, 64, y + 134);
       };
       section(92, 'SECTOR COORDINATES', 'rgba(103,232,249,0.9)', '11.0782° N, 77.1386° E', '#ecfeff', 'KPRIET · COIMBATORE');
       g.strokeStyle = 'rgba(148,163,184,0.25)';
@@ -1592,7 +1599,7 @@ const ThreeHeroBackground = ({
       const postH = 0.7;
       const face = new THREE.Mesh(
         new THREE.PlaneGeometry(w, h),
-        new THREE.MeshBasicMaterial({ map: cv.t, transparent: true, color: new THREE.Color(0.88, 0.88, 0.88), fog: false })
+        new THREE.MeshBasicMaterial({ map: cv.t, transparent: true, color: new THREE.Color(0.92, 0.92, 0.92), fog: false, toneMapped: false })
       );
       face.position.set(0, postH + h / 2, 0.06);
       grp.add(face);
@@ -3814,17 +3821,22 @@ const MOTION_CSS = `
 .prize-in .prize-heading-sweep { animation: prizeHeadSweep 1.3s ease-out .8s 1 both; }
 @keyframes prizeHeadSweep { 0% { background-position: 150% 0; opacity: 1; } 100% { background-position: -50% 0; opacity: 0; } }
 
+.explore-btn { box-shadow: 0 0 0 0 rgba(250,204,21,.45); animation: explorePulse 2.4s ease-out infinite; }
+.explore-chev { animation: exploreBob 1.6s ease-in-out infinite; }
+@keyframes explorePulse { 0% { box-shadow: 0 0 0 0 rgba(250,204,21,.45); } 70%, 100% { box-shadow: 0 0 0 14px rgba(250,204,21,0); } }
+@keyframes exploreBob { 0%, 100% { transform: rotate(90deg) translateX(0); } 50% { transform: rotate(90deg) translateX(3px); } }
+@media (prefers-reduced-motion: reduce) { .explore-btn, .explore-chev { animation: none; } }
+
 /* Hero → techno-fest hand-off (vars set by TechnoFestSection on scroll): the hero HUD lifts and fades,
    the fixed 3D arena dims into dark steel. */
 .hero-band { opacity: calc(1 - var(--hero-out, 0) * 0.95); transform: translateY(calc(var(--hero-out, 0) * -7vh)); }
 .scene-dim { background: #03050b; opacity: calc(var(--scene-dim, 0) * 0.82); }
-.tf-horizon { top: calc(var(--fade) * 0.82); --d: clamp(0, calc(var(--p) * 3.4 - 0.12), 1);
-  opacity: clamp(0, calc((0.92 - var(--p)) * 4), 1); }
+.tf-horizon { --d: clamp(0, calc(var(--p) * 1.6 - 0.1), 1); }
 .tf-hz-line { fill: none; stroke: url(#tfHz); stroke-width: 2.2; vector-effect: non-scaling-stroke;
   stroke-dasharray: 1; stroke-dashoffset: calc(1 - var(--d)); filter: drop-shadow(0 0 6px rgba(34,211,238,.9)); }
 .tf-hz-core { position: absolute; left: 50%; top: 75%; width: 14px; height: 14px; transform: translate(-50%, -50%) rotate(45deg) scale(calc(0.4 + var(--d) * 0.6));
   background: #fff6c2; box-shadow: 0 0 14px 4px rgba(250,204,21,.85), 0 0 40px 12px rgba(34,211,238,.35); }
-@media (prefers-reduced-motion: reduce) { .hero-band { opacity: 1; transform: none; } .tf-horizon { display: none; } }
+@media (prefers-reduced-motion: reduce) { .hero-band { opacity: 1; transform: none; } }
 
 /* Techno-fest section: no hard edge with the hero — its top dissolves into the 3D arena through a soft
    fade that is long while the section is just rising (the hero melts into dark steel) and tightens as it
@@ -4830,14 +4842,13 @@ function TechnoFestSection() {
     let raf = 0;
     const update = () => {
       raf = 0;
+      if (tfDrive.on) return;   // the EXPLORE transition is animating this section
       const r = el.getBoundingClientRect();
       const vh = window.innerHeight;
-      // 0 when the section's top reaches the bottom of the screen, 1 once it has scrolled ~1 screen in.
-      const p = Math.min(1, Math.max(0, (vh - r.top) / (vh * 1.05)));
-      el.style.setProperty('--p', p.toFixed(3));
-      // Page-level transition from the hero: its HUD lifts away and fades, and the 3D arena dims into
-      // this section's dark steel so the two never meet at an edge. The dimmer lifts again before the
-      // events section, where the robots need the arena.
+      // The section is its own page now (reached through EXPLORE), so it is always fully assembled.
+      el.style.setProperty('--p', '1');
+      // The 3D arena stays dimmed under this section and the prize vault, and lifts again before the
+      // events section, where the robots need it.
       const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
       const roster = document.getElementById('roster');
       const leave = roster ? clamp01((vh - roster.getBoundingClientRect().top) / (vh * 0.6)) : 0;
@@ -4847,8 +4858,8 @@ function TechnoFestSection() {
       const prize = document.querySelector<HTMLElement>('.prize-sec');
       const opaqueBottom = prize ? prize.getBoundingClientRect().bottom : r.bottom;
       sceneGate.scroll = r.top + vh * 0.4 <= 0 && opaqueBottom >= vh;
-      root.setProperty('--hero-out', clamp01((window.scrollY - vh * 0.1) / (vh * 0.6)).toFixed(3));
-      root.setProperty('--scene-dim', (clamp01((vh * 0.85 - r.top) / (vh * 0.75)) * (1 - leave)).toFixed(3));
+      root.setProperty('--hero-out', '1');
+      root.setProperty('--scene-dim', (1 - leave).toFixed(3));
     };
     const onScroll = () => { if (!raf) raf = requestAnimationFrame(update); };
     update();
@@ -4886,7 +4897,7 @@ function TechnoFestSection() {
   ];
   let wi = 0;
   return (
-    <section ref={ref} className="tf-sec relative z-10 overflow-hidden -mt-[6vh]" style={{ ['--p' as string]: 0 }}>
+    <section ref={ref} className="tf-sec relative z-10 overflow-hidden" style={{ ['--p' as string]: tfDrive.on ? 0 : 1 }}>
       {/* Backdrop: dark Cybertron steel, energon shards, hex grid, insignia watermark */}
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_40%,#0f1b33_0%,#060a14_55%,#03050b_100%)]" />
       <div className="tf-hex tf-hex-fade absolute inset-0 opacity-[0.07]" />
@@ -4895,33 +4906,32 @@ function TechnoFestSection() {
         className="tf-emblem absolute left-1/2 top-1/2 w-[min(70vw,640px)] -translate-x-1/2 -translate-y-1/2 opacity-[0.06] pointer-events-none select-none"
       />
       <EnergonShards className="absolute inset-0 w-full h-full" />
-      {/* Energon horizon: an Autobot-visor chevron drawn outward from a bright core as the section rises,
-          sitting where the arena dissolves into the section; it fades once the section has settled */}
-      <div className="tf-horizon absolute inset-x-0 h-10 sm:h-12 pointer-events-none" aria-hidden="true">
-        <svg viewBox="0 0 1000 40" preserveAspectRatio="none" className="w-full h-full overflow-visible">
-          <defs>
-            <linearGradient id="tfHz" x1="0" y1="0" x2="1000" y2="0" gradientUnits="userSpaceOnUse">
-              <stop offset="0" stopColor="#22d3ee" stopOpacity="0" />
-              <stop offset=".3" stopColor="#22d3ee" />
-              <stop offset=".5" stopColor="#facc15" />
-              <stop offset=".7" stopColor="#22d3ee" />
-              <stop offset="1" stopColor="#22d3ee" stopOpacity="0" />
-            </linearGradient>
-          </defs>
-          <path pathLength={1} className="tf-hz-line" d="M500 30 H545 L570 8 H1000" />
-          <path pathLength={1} className="tf-hz-line" d="M500 30 H455 L430 8 H0" />
-        </svg>
-        <span className="tf-hz-core" />
-      </div>
       {/* Horizon glow where the arena floor meets the section: a warm haze instead of an edge line */}
       <div className="absolute inset-x-0 top-0 h-[30vh] bg-[radial-gradient(ellipse_60%_100%_at_50%_0%,rgba(250,204,21,.10),transparent_70%)]" aria-hidden="true" />
       <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-b from-transparent to-[#03050b]" aria-hidden="true" />
       {/* Energon conduit, part 1: from under the fact panels down into the prize section */}
       <div className="pv-conduit absolute left-1/2 bottom-0 h-20 sm:h-24" aria-hidden="true"><i /><i /></div>
 
-      {/* The section starts 6vh higher (over the hero's empty floor) so its backdrop covers more of the
-          screen; the extra top padding keeps the headline where it was. */}
-      <div className="relative min-h-[calc(100svh+6vh)] flex flex-col items-center justify-center px-4 pb-24 pt-[calc(6rem+6vh)] text-center">
+      {/* Fills the screen under the header: this is the page EXPLORE lands on */}
+      <div className="relative min-h-[calc(100svh-5rem)] flex flex-col items-center justify-center px-4 pb-20 pt-10 sm:pt-12 text-center">
+        {/* Energon horizon: an Autobot-visor chevron drawn outward from a bright core as the section
+            assembles; it stays as a divider above the KPR line, no wider than the hero's ring */}
+        <div className="tf-horizon relative w-[min(54vh,86vw)] h-8 sm:h-10 mb-5 sm:mb-6 pointer-events-none" aria-hidden="true">
+          <svg viewBox="0 0 1000 40" preserveAspectRatio="none" className="w-full h-full overflow-visible">
+            <defs>
+              <linearGradient id="tfHz" x1="0" y1="0" x2="1000" y2="0" gradientUnits="userSpaceOnUse">
+                <stop offset="0" stopColor="#22d3ee" stopOpacity="0" />
+                <stop offset=".3" stopColor="#22d3ee" />
+                <stop offset=".5" stopColor="#facc15" />
+                <stop offset=".7" stopColor="#22d3ee" />
+                <stop offset="1" stopColor="#22d3ee" stopOpacity="0" />
+              </linearGradient>
+            </defs>
+            <path pathLength={1} className="tf-hz-line" d="M500 30 H545 L570 8 H1000" />
+            <path pathLength={1} className="tf-hz-line" d="M500 30 H455 L430 8 H0" />
+          </svg>
+          <span className="tf-hz-core" />
+        </div>
         <p className="tf-kicker font-sans text-sm sm:text-lg font-semibold tracking-[0.06em] text-slate-200">
           KPR Institute of Engineering and Technology
           <span className="mx-2.5 text-amber-400">·</span>
@@ -5251,6 +5261,13 @@ export default function App() {
   }, []);
   const [subPage, setSubPage] = useState<SubPage>(subPageFromHash);
   const [profile, setProfile] = useState<Profile | null>(BACKEND_ENABLED ? null : currentProfile);
+  // Home is two pages: the hero on its own (nothing to scroll to) and, after EXPLORE, the rest of the
+  // site starting at the techno-fest headline. 'opening' is the first-time timed transition between them.
+  const [homePhase, setHomePhase] = useState<'hero' | 'opening' | 'explored'>('hero');
+  const homePhaseRef = useRef(homePhase);
+  homePhaseRef.current = homePhase;
+  const exploredOnce = useRef(false);   // the opening animation plays on the first EXPLORE only
+  const snapTop = useRef(false);        // jump to the top once the explored layout is in
   useEffect(() => {
     const sync = () => setSubPage(subPageFromHash());
     window.addEventListener('hashchange', sync);
@@ -5467,7 +5484,27 @@ export default function App() {
     setActiveHero(null);
     leaveSubPage();
     setMobileMenuOpen(false);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setHomePhase('hero');
+    window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+  }, []);
+  // EXPLORE: first time, a timed transition (hero lifts away, arena dims, the headline assembles);
+  // afterwards straight to the techno-fest page.
+  const explore = useCallback(() => {
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (exploredOnce.current || reduce) {
+      exploredOnce.current = true;
+      snapTop.current = true;
+      setHomePhase('explored');
+      return;
+    }
+    exploredOnce.current = true;
+    tfDrive.on = true;
+    setHomePhase('opening');
+  }, []);
+  // Anything that needs a section past the hero switches to the explored page first (no animation).
+  const toExplored = useCallback(() => {
+    exploredOnce.current = true;
+    setHomePhase((ph) => (ph === 'hero' ? 'explored' : ph));
   }, []);
   const goSubPage = useCallback((page: 'certificate' | 'mypass') => {
     setActiveHero(null);
@@ -5485,8 +5522,9 @@ export default function App() {
     setActiveHero(null);
     leaveSubPage();
     setMobileMenuOpen(false);
+    toExplored();
     setTimeout(() => glideTo(document.getElementById('passes')), 80);
-  }, []);
+  }, [toExplored]);
 
   // Leaders list sits on the home page too, so leave any hero page first (phone action bar).
   const goRoster = useCallback(() => {
@@ -5494,8 +5532,55 @@ export default function App() {
     setActiveHero(null);
     leaveSubPage();
     setMobileMenuOpen(false);
+    toExplored();
     setTimeout(() => glideTo(document.getElementById('roster')), 80);
-  }, []);
+  }, [toExplored]);
+
+  // First-time EXPLORE transition (~1.25 s, time-based so it runs at full frame rate): the page glides
+  // from the hero to the techno-fest section while the hero lifts away, the arena dims and the
+  // headline assembles. Scrolling input is held until it lands; then the hero page is dropped and the
+  // view is kept exactly where it ended.
+  useEffect(() => {
+    if (homePhase !== 'opening') return;
+    const tf = document.querySelector<HTMLElement>('.tf-sec');
+    if (!tf) { tfDrive.on = false; setHomePhase('explored'); return; }
+    const root = document.documentElement.style;
+    const target = tf.getBoundingClientRect().top + window.scrollY - 80;
+    const D = 1250;
+    const ease = (x: number) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+    const block = (e: Event) => { if (e.cancelable) e.preventDefault(); };
+    window.addEventListener('wheel', block, { passive: false });
+    window.addEventListener('touchmove', block, { passive: false });
+    let raf = 0;
+    const t0 = performance.now();
+    const step = (now: number) => {
+      const k = Math.min(1, (now - t0) / D);
+      const e = ease(k);
+      window.scrollTo({ top: target * e, behavior: 'instant' as ScrollBehavior });
+      tf.style.setProperty('--p', e.toFixed(3));
+      root.setProperty('--hero-out', Math.min(1, e * 1.6).toFixed(3));
+      root.setProperty('--scene-dim', e.toFixed(3));
+      if (k < 1) { raf = requestAnimationFrame(step); return; }
+      tfDrive.on = false;
+      snapTop.current = true;
+      setHomePhase('explored');
+    };
+    raf = requestAnimationFrame(step);
+    return () => {
+      cancelAnimationFrame(raf);
+      tfDrive.on = false;
+      window.removeEventListener('wheel', block);
+      window.removeEventListener('touchmove', block);
+    };
+  }, [homePhase]);
+  // The explored layout drops the hero, so the techno-fest section moves to the top of the page:
+  // jump there before the browser paints, so the view does not move.
+  useLayoutEffect(() => {
+    if (homePhase === 'explored' && snapTop.current) {
+      snapTop.current = false;
+      window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+    }
+  }, [homePhase]);
 
   const toggleSound = () => {
     const next = !soundEnabled;
@@ -5739,7 +5824,7 @@ export default function App() {
       if (!row) {
         // Outside the events: robots go home only while the main page's hero is on screen;
         // anywhere else the stage stays empty.
-        st.key = window.scrollY < vh * 0.9 ? null : EMPTY_STAGE;
+        st.key = homePhaseRef.current !== 'explored' ? null : EMPTY_STAGE;
         handOver(st.key);
         return;
       }
@@ -6016,7 +6101,7 @@ export default function App() {
             <button
               onClick={goMyPass}
               title={profile ? `My pass · ${profile.id}` : 'Get your Optimus ID'}
-              className={`hidden md:inline-flex items-center gap-2 px-3 2xl:px-4 py-2.5 rounded-xl border ${t.text} ${subPage === 'mypass' ? t.ring : 'border-slate-700 hover:border-slate-500'} transition-colors text-xs font-black tracking-widest font-mono`}
+              className={`hidden md:inline-flex items-center gap-2 px-3 2xl:px-4 py-2.5 rounded-xl border ${t.text} ${t.ring} ${subPage === 'mypass' ? t.glow : 'hover:bg-white/5'} bg-slate-950/40 transition-colors text-xs font-black tracking-widest font-mono`}
             >
               <QrCode className="w-4 h-4" /> <span className="hidden lg:inline">{profile ? `MY PASS · ${profile.id}` : 'GET OPTIMUS ID'}</span>
               {profile && <span className="w-2 h-2 rounded-full bg-emerald-400" aria-label="Signed in" />}
@@ -6067,6 +6152,7 @@ export default function App() {
         ) : !active ? (
           /* ======================= HOME ======================= */
           <>
+            {homePhase !== 'explored' && (<>
             {/* Hero band — pointer-events pass through to the 3D scene except on controls */}
             {/* Phones: one stacked column. sm+: each block is pinned to the 3D gate ring, whose
                 landscape projection is fixed by the camera (48° FOV): top edge ≈ 18.9vh, centre ≈ 46.2vh,
@@ -6127,10 +6213,13 @@ export default function App() {
                         // Straight to the first leader: on laptops its row pins exactly at the top (card
                         // beside Bumblebee on the events stage); on phones, its card just under the header.
                         e.preventDefault();
-                        const row = document.querySelector<HTMLElement>('[data-stage-row="bumblebee"]');
-                        // (the scene keeps drawing so Bumblebee's drive-in is seen from its start)
-                        if (window.innerWidth >= 1024) glideTo(row, 0, false);
-                        else glideTo(row?.querySelector('button') ?? row, 88);
+                        toExplored();
+                        setTimeout(() => {
+                          const row = document.querySelector<HTMLElement>('[data-stage-row="bumblebee"]');
+                          // (the scene keeps drawing so Bumblebee's drive-in is seen from its start)
+                          if (window.innerWidth >= 1024) glideTo(row, 0, false);
+                          else glideTo(row?.querySelector('button') ?? row, 88);
+                        }, 80);
                       }}
                       className="flex-1 min-w-0 sm:flex-none flex items-center justify-center px-2 sm:px-10 py-3 sm:py-4 rounded-xl bg-slate-900/90 border border-slate-700/80 hover:bg-slate-800 text-slate-200 text-[11px] sm:text-xs font-mono font-bold tracking-wide sm:tracking-widest transition-all whitespace-nowrap"
                     >
@@ -6140,6 +6229,12 @@ export default function App() {
                   {/* Countdown stays where it was: below a 52px button row that started at 68.2vh */}
                   <div className="sm:absolute sm:inset-x-0 sm:top-[calc(68.2vh-5rem+52px)]">
                     <Countdown />
+                    {/* EXPLORE: the way into the rest of the site (the hero page itself does not scroll) */}
+                    <div className="mt-4 sm:mt-5 flex justify-center pointer-events-auto">
+                      <button onClick={explore} className="explore-btn group inline-flex items-center gap-2.5 rounded-full border border-amber-400/70 bg-slate-950/70 px-7 py-2.5 text-[11px] sm:text-xs font-black tracking-[0.35em] text-amber-300 hover:bg-amber-400 hover:text-black transition-colors">
+                        EXPLORE <ChevronRight className="explore-chev w-4 h-4 rotate-90" />
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -6177,7 +6272,10 @@ export default function App() {
               </div>
             </section>
 
-            {/* Second "page": the headline on its own Transformers backdrop */}
+            </>)}
+
+            {homePhase !== 'hero' && (<>
+            {/* Second page (EXPLORE): the headline on its own Transformers backdrop */}
             <TechnoFestSection />
 
             {/* Overall prize-pool cinematic reveal */}
@@ -6338,13 +6436,14 @@ export default function App() {
                 </div>
               </div>
             </section>
+            </>)}
 
           </>
         ) : (
           /* ======================= HERO PAGE ======================= */
           <section key={active.key} className="min-h-[calc(100vh-5rem)] px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto py-10">
             <button
-              onClick={goHome}
+              onClick={goRoster}
               className="inline-flex items-center gap-2 text-xs font-mono font-bold tracking-widest text-white hover:opacity-80 mb-8"
             >
               <ArrowLeft className="w-4 h-4" /> BACK TO ROSTER
@@ -6758,6 +6857,7 @@ export default function App() {
       )}
 
       {/* ===================== FOOTER ===================== */}
+      {(active || subPage || homePhase !== 'hero') && (
       <footer className="border-t border-slate-800/80 bg-slate-950/95 relative z-10 pt-14 pb-28 lg:pb-12 text-slate-400">
         <div className="max-w-7xl mx-auto px-5 sm:px-8">
           {/* Brand + presented-by */}
@@ -6854,7 +6954,7 @@ export default function App() {
               © 2027 OPTIMUS '27 · KPR INSTITUTE OF ENGINEERING AND TECHNOLOGY
             </p>
             <button
-              onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+              onClick={goHome}
               className="inline-flex items-center gap-2 rounded-full border border-slate-700/80 px-5 py-2.5 font-plex text-xs font-bold tracking-widest text-slate-200 hover:border-slate-500 hover:text-white"
             >
               TOP <ChevronRight className="w-4 h-4 -rotate-90" />
@@ -6862,6 +6962,7 @@ export default function App() {
           </div>
         </div>
       </footer>
+      )}
 
       {/* ============ AUDIO PILL — bottom-right music toggle (phones use the action bar) ============ */}
       {gate === 'gone' && (
@@ -6930,7 +7031,7 @@ export default function App() {
       )}
 
       {/* ============ CYBERTRON HUD — bottom-left tactical panels (home only, hidden on phones) ============ */}
-      {gate === 'gone' && !active && !subPage && (
+      {gate === 'gone' && !active && !subPage && homePhase === 'hero' && (
         <div className="hud-flat fixed left-2.5 sm:left-5 bottom-2.5 sm:bottom-5 z-40 pointer-events-none hidden xl:flex flex-col gap-2 sm:gap-2.5 w-[min(60vw,270px)]">
           {/* SECTOR COORDINATES */}
           <div className="hud-panel-in relative overflow-hidden rounded-lg border border-cyan-400/30 bg-slate-950/80 px-3.5 py-2 sm:px-4 sm:py-2.5">
@@ -6962,7 +7063,7 @@ export default function App() {
       )}
 
       {/* ============ Partner logos — bottom-right (home only) ============ */}
-      {gate === 'gone' && !active && !subPage && (
+      {gate === 'gone' && !active && !subPage && homePhase === 'hero' && (
         <div
           className="hud-flat hud-panel-in fixed right-3 sm:right-8 lg:right-44 bottom-2 sm:bottom-4 z-40 pointer-events-none hidden xl:flex flex-col items-center"
           style={{ perspective: '900px' }}
