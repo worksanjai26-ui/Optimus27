@@ -19,9 +19,7 @@ const SHIM = `
   create schema extensions;
   create role anon nologin; create role authenticated nologin;
   grant usage on schema public, auth, extensions to anon, authenticated;
-  alter default privileges in schema public grant all on tables to anon, authenticated;
-  alter default privileges in schema public grant all on functions to anon, authenticated;
-  alter default privileges in schema public grant all on sequences to anon, authenticated;
+  -- no default privileges: like a new Supabase project, the schema must grant table access itself
 `;
 
 const users = {};
@@ -84,8 +82,9 @@ test('Optimus IDs are issued once, in order, and names must be capitals', async 
 
 test('strangers see nothing; people see only their own rows; admins see all', async () => {
   assert.deepEqual(await as(null, 'select * from public.events limit 1').then((r) => r.length), 1);   // events are public
-  assert.equal((await as(null, 'select * from public.profiles')).length, 0);
-  assert.equal((await as(null, 'select * from public.attendance')).length, 0);
+  await fails(as(null, 'select * from public.profiles'), /permission denied/);
+  await fails(as(null, 'select * from public.attendance'), /permission denied/);
+  await fails(as(null, 'select * from public.staff'), /permission denied/);
   assert.equal((await as('asha', 'select * from public.profiles')).length, 1);
   assert.equal((await as('admin', 'select * from public.profiles')).length, 5);
   await fails(as('asha', `update public.profiles set name = 'X'`), /permission denied/);

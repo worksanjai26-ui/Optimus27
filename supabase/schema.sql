@@ -183,6 +183,16 @@ revoke insert, update, delete, truncate on
 revoke all on public.settings, public.app_secrets from anon, authenticated;
 revoke all on public.staff from anon;
 
+-- Newer Supabase projects no longer grant table access to the website's roles automatically, so say it
+-- here. These only open the door; the row-level-security policies above decide which rows are visible.
+grant usage on schema public to anon, authenticated;
+grant select on public.events, public.announcements, public.event_overrides to anon;
+grant select on
+  public.events, public.profiles, public.registrations, public.registration_members,
+  public.bookings, public.attendance, public.staff, public.announcements, public.event_overrides
+to authenticated;
+grant insert, update, delete on public.announcements, public.event_overrides, public.staff to authenticated;
+
 /* ---------------------------- Optimus IDs --------------------------- */
 create or replace function public.issue_optimus_id(p_name text, p_phone text, p_college text)
 returns jsonb language plpgsql security definer set search_path = public, extensions as $$

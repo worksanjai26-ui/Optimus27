@@ -41,7 +41,8 @@ import {
 } from './identity';
 import {
   BACKEND_ENABLED, AuthUser, watchUser, signInWithGoogle, signOutUser, fetchMyProfile, createMyProfile,
-  checkTeamMembers, submitRegistration, backendError, remoteOverrides, remoteAnnouncements, fetchMyPass, fetchQrToken
+  checkTeamMembers, submitRegistration, backendError, remoteOverrides, remoteAnnouncements, fetchMyPass, fetchQrToken,
+  cachedProfile, cacheProfile, cachedQr, cacheQr, clearLocalSession
 } from './backend';
 import { EVENT_SCHEDULE, KIND_LABEL, PASS_QUOTA, type EventKind, type MyPassData } from './schedule';
 // Public-folder files are served under the Vite base (the repo sub-path on GitHub Pages, '/' in dev).
@@ -1147,7 +1148,14 @@ const ThreeHeroBackground = ({
     // itself needs no MSAA. Render scale adapts to the frame rate (see animate()).
     // In lite mode there is no composer, so the canvas does its own (cheap) MSAA.
     const renderer = new THREE.WebGLRenderer({ antialias: lite, powerPreference: 'high-performance' });
-    const DPR_MAX = Math.min(window.devicePixelRatio, tier === 'high' && !isPhone ? 1.25 : 1);
+    // Sharper leaders: start at a higher render scale where the device can take it. The adaptive step in
+    // animate() still lowers it (and then the effects) on any device that runs slow, so this cannot cause lag
+    // for long. Lite (weak) devices stay at 1.
+    const strongDevice = (navigator.hardwareConcurrency || 4) >= 6;
+    const DPR_MAX = Math.min(
+      window.devicePixelRatio,
+      lite ? 1 : isPhone ? (strongDevice ? 1.5 : 1.25) : tier === 'high' ? 1.5 : 1.25
+    );
     const DPR_MIN = lite ? 0.5 : 0.7;
     let dprCap = DPR_MAX;   // lowered once effects have been shed, so the scale never creeps back up into lag
     let dpr = DPR_MAX;
@@ -4530,11 +4538,14 @@ function MyPassPage({ profile, onProfile, onHome, authUser, authReady }: {
     setBusy(true);
     signInWithGoogle(remember).catch((err) => window.alert(backendError(err))).finally(() => setBusy(false));
   };
-  const [qr, setQr] = useState('');
+  // The last QR is kept on the device until sign-out, so My Pass shows it the moment the page opens (dimmed with
+  // "UPDATING" until a fresh one arrives) and it never vanishes because of a slow or dropped connection.
+  const [qr, setQr] = useState(() => (BACKEND_ENABLED ? cachedQr() : ''));
+  const [qrFresh, setQrFresh] = useState(!BACKEND_ENABLED);
   const [qrOffline, setQrOffline] = useState(false);
   const [myPass, setMyPass] = useState<MyPassData | null>(null);
   useEffect(() => {
-    if (!profile) { setQr(''); setMyPass(null); return; }
+    if (!profile) { if (!BACKEND_ENABLED) setQr(''); setMyPass(null); return; }
     const draw = (text: string) =>
       QRCode.toDataURL(text, { width: 480, margin: 1, errorCorrectionLevel: 'M', color: { dark: '#020617', light: '#ffffff' } });
     if (!BACKEND_ENABLED) {
@@ -4544,18 +4555,22 @@ function MyPassPage({ profile, onProfile, onHome, authUser, authReady }: {
     // The QR is signed by the server and expires after two minutes, so a screenshot of it is useless.
     // It refreshes every minute; the booked events and attendance refresh a little faster so a scan shows up.
     let stop = false;
-    const refreshQr = () => fetchQrToken().then(draw).then(
-      (url) => { if (!stop) { setQr(url); setQrOffline(false); } },
-      () => { if (!stop) setQrOffline(true); }
-    );
+    let retry = 0;
+    const refreshQr = () => {
+      clearTimeout(retry);
+      return fetchQrToken().then(draw).then(
+        (url) => { if (!stop) { setQr(url); cacheQr(url); setQrFresh(true); setQrOffline(false); } },
+        () => { if (!stop) { setQrFresh(false); setQrOffline(true); retry = window.setTimeout(refreshQr, 8000); } }   // keep the old QR, try again soon
+      );
+    };
     const refreshPass = () => fetchMyPass().then((d) => { if (!stop) setMyPass(d); }, () => {});
     refreshQr(); refreshPass();
     const qrTimer = window.setInterval(refreshQr, 60000);
     const passTimer = window.setInterval(refreshPass, 20000);
     const onVisible = () => { if (document.visibilityState === 'visible') { refreshQr(); refreshPass(); } };
     document.addEventListener('visibilitychange', onVisible);
-    return () => { stop = true; clearInterval(qrTimer); clearInterval(passTimer); document.removeEventListener('visibilitychange', onVisible); };
-  }, [profile]);
+    return () => { stop = true; clearTimeout(retry); clearInterval(qrTimer); clearInterval(passTimer); document.removeEventListener('visibilitychange', onVisible); };
+  }, [profile?.id]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const create = (e: React.FormEvent) => {
     e.preventDefault();
@@ -4610,8 +4625,11 @@ function MyPassPage({ profile, onProfile, onHome, authUser, authReady }: {
             <p className="mt-2 text-lg font-black tracking-wide text-white">{profile.name}</p>
             <p className="text-xs text-slate-400">{profile.college}</p>
           </div>
-          <div className="mx-auto w-56 sm:w-64 aspect-square rounded-2xl bg-white p-3">
+          <div className="relative mx-auto w-56 sm:w-64 aspect-square rounded-2xl bg-white p-3">
             {qr && <img src={qr} alt={`QR code for ${profile.id}`} className="w-full h-full" />}
+            {qr && !qrFresh && BACKEND_ENABLED && (
+              <div className="absolute inset-0 rounded-2xl bg-white/75 flex items-center justify-center text-[11px] font-mono font-bold tracking-widest text-slate-700">UPDATING…</div>
+            )}
           </div>
           {BACKEND_ENABLED && (
             <>
@@ -5250,7 +5268,9 @@ export default function App() {
     return () => window.removeEventListener('pointerdown', onDown);
   }, []);
   const [subPage, setSubPage] = useState<SubPage>(subPageFromHash);
-  const [profile, setProfile] = useState<Profile | null>(BACKEND_ENABLED ? null : currentProfile);
+  // With the backend, the last profile is kept on this device until sign-out so My Pass and the header never
+  // flash back to "sign in" while the session is being restored or the connection is slow.
+  const [profile, setProfile] = useState<Profile | null>(BACKEND_ENABLED ? cachedProfile : currentProfile);
   useEffect(() => {
     const sync = () => setSubPage(subPageFromHash());
     window.addEventListener('hashchange', sync);
@@ -5356,8 +5376,10 @@ export default function App() {
     if (!backendOn) return;
     return watchUser((u) => {
       setAuthUser(u);
-      if (!u) { setProfile(null); setAuthReady(true); return; }
-      fetchMyProfile(u.uid).then(setProfile, () => setProfile(null)).finally(() => setAuthReady(true));
+      if (!u) { setProfile(null); clearLocalSession(); setAuthReady(true); return; }
+      setProfile((cur) => (cur && cur.email === u.email ? cur : null));   // never show another account's profile
+      // A failed lookup (bad signal) keeps what is on screen; only a real "no profile yet" or sign-out clears it.
+      fetchMyProfile(u.uid).then((p) => { cacheProfile(p); setProfile(p); }, () => {}).finally(() => setAuthReady(true));
     });
   }, [backendOn]);
   useEffect(() => {
@@ -5667,56 +5689,11 @@ export default function App() {
     let lastY = window.scrollY;
     let prev: { key: string; from: number; exit: number } | null = null;   // leader on stage last update
 
-    // Scroll stop: when the user's own downward scrolling reaches a leader's card (its row pins), the page
-    // holds there until that robot has finished arriving — the full drive-in + transform the first time,
-    // otherwise just its walk to its mark. However fast you scroll, every robot stands before it leaves.
-    // Scrolling up is never held, and only wheel / touch / keyboard scrolling counts, so the TOP and HOME
-    // buttons, nav links and anything else that scrolls the page go straight through.
-    let lock: { y: number; key: string; t0: number; max: number } | null = null;
-    let lastInput = 0;
-    let lastStop: { key: string; y: number } | null = null;   // a stop never catches twice until you have moved well away
-    const SCROLL_KEYS = new Set(['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', ' ', 'End', 'Home']);
-    const onInput = (e: Event) => {
-      lastInput = performance.now();
-      if (lock && e.cancelable) e.preventDefault();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (!SCROLL_KEYS.has(e.key) || (e.target as HTMLElement)?.closest?.('input, textarea, select, [contenteditable]')) return;
-      onInput(e);
-    };
-    const holdTo = (y: number) => window.scrollTo({ top: y, behavior: 'instant' as ScrollBehavior });
-    const watchLock = () => {
-      if (!lock) return;
-      const now = performance.now();
-      if ((st.settled && st.key === lock.key && now - lock.t0 > 120) || now - lock.t0 > lock.max) { lock = null; return; }
-      if (Math.abs(window.scrollY - lock.y) > 1) holdTo(lock.y);
-      requestAnimationFrame(watchLock);
-    };
-
+    // Scrolling is never held: the page always follows the user's own scroll. A robot that has not finished
+    // arriving simply keeps walking in while the page moves on, and one that is passed walks off the edge.
     const update = () => {
       raf = 0;
       const down = window.scrollY >= lastY;
-      if (lock) {
-        if (Math.abs(window.scrollY - lock.y) > 1) holdTo(lock.y);
-      } else if (down && !reduce && sceneReadyRef.current && window.innerWidth >= 1024 && performance.now() - lastInput < 500) {
-        // The first stop this scroll step crossed (a fast flick can cross several in one frame).
-        const y = window.scrollY, vh = window.innerHeight;
-        let stop: { y: number; key: string } | null = null;
-        document.querySelectorAll<HTMLElement>('[data-stage-row]').forEach((row) => {
-          const top = row.getBoundingClientRect().top + y;   // the card pins here
-          if (lastY < top - 2 && top <= y + 2 && (!stop || top < stop.y)) stop = { y: top, key: row.dataset.stageRow! };
-        });
-        if (stop && lastStop && Math.abs((stop as { y: number }).y - lastStop.y) < 4) stop = null;
-        if (lastStop && Math.abs(y - lastStop.y) > vh) lastStop = null;
-        if (stop) {
-          const { y: sy, key } = stop as { y: number; key: string };
-          lock = { y: sy, key, t0: performance.now(), max: stagedOnce.current.has(key) ? 2500 : 6500 };
-          lastStop = { key, y: sy };
-          st.settled = false;
-          holdTo(sy);
-          requestAnimationFrame(watchLock);
-        }
-      }
       lastY = window.scrollY;
       // A fast scroll can skip a leader's walk-out entirely. Whoever loses the stage is told which
       // edge to keep walking to (exit going down, back where it came from going up), so robots
@@ -5771,17 +5748,10 @@ export default function App() {
     update();
     window.addEventListener('scroll', onScroll, { passive: true });
     window.addEventListener('resize', onScroll);
-    window.addEventListener('wheel', onInput, { passive: false });
-    window.addEventListener('touchmove', onInput, { passive: false });
-    window.addEventListener('keydown', onKey);
     return () => {
       cancelAnimationFrame(raf);
-      lock = null;
       window.removeEventListener('scroll', onScroll);
       window.removeEventListener('resize', onScroll);
-      window.removeEventListener('wheel', onInput);
-      window.removeEventListener('touchmove', onInput);
-      window.removeEventListener('keydown', onKey);
       st.key = null;
     };
   }, [activeHero, subPage, gate]);

@@ -50,9 +50,27 @@ export const signInWithGoogle = async (remember = true) => {
 };
 
 export const signOutUser = async () => {
+  clearLocalSession();
   const sb = await getClient();
   await sb.auth.signOut();
 };
+
+/* ------------- what the device remembers until sign-out ------------- */
+// The last profile and QR image, so My Pass opens instantly and does not vanish on a bad connection.
+// Both are removed on sign-out (or when the session turns out to be gone).
+const PROFILE_KEY = 'optimus27.profileCache';
+const QR_KEY = 'optimus27.qrCache';
+const readKey = (k: string) => { try { return localStorage.getItem(k); } catch { return null; } };
+const writeKey = (k: string, v: string | null) => {
+  try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch { /* storage blocked */ }
+};
+export const cachedProfile = (): Profile | null => {
+  try { const v = readKey(PROFILE_KEY); return v ? (JSON.parse(v) as Profile) : null; } catch { return null; }
+};
+export const cacheProfile = (p: Profile | null) => writeKey(PROFILE_KEY, p ? JSON.stringify(p) : null);
+export const cachedQr = () => readKey(QR_KEY) ?? '';
+export const cacheQr = (url: string | null) => writeKey(QR_KEY, url);
+export const clearLocalSession = () => { writeKey(PROFILE_KEY, null); writeKey(QR_KEY, null); };
 
 /* ------------------------------- errors -------------------------------- */
 /** A readable message from a failed backend call. Messages we raise ourselves in SQL are safe to show as they are. */
