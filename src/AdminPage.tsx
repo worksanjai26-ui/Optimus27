@@ -29,11 +29,20 @@ function Shell({ children, onSignOut }: { children: React.ReactNode; onSignOut?:
             <Shield className="w-5 h-5 text-amber-400" />
             <span className="font-black tracking-[0.2em] text-sm">OPTIMUS '27 <span className="text-amber-400">ADMIN</span></span>
           </div>
-          {onSignOut && (
-            <button onClick={onSignOut} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 text-slate-300 hover:text-white text-xs font-mono">
-              <LogOut className="w-3.5 h-3.5" /> SIGN OUT
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            <a
+              href={import.meta.env.BASE_URL}
+              onClick={(e) => { e.preventDefault(); history.replaceState(null, '', import.meta.env.BASE_URL); window.location.reload(); }}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-700 text-slate-300 hover:text-white text-xs font-mono"
+            >
+              ← SITE
+            </a>
+            {onSignOut && (
+              <button onClick={onSignOut} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 text-slate-300 hover:text-white text-xs font-mono">
+                <LogOut className="w-3.5 h-3.5" /> SIGN OUT
+              </button>
+            )}
+          </div>
         </div>
       </header>
       <main className="max-w-7xl mx-auto px-4 py-8">{children}</main>

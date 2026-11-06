@@ -31,7 +31,8 @@ import {
   MapPin,
   CalendarPlus,
   Award,
-  Download
+  Download,
+  ScanLine
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { listOverrides, listAnnouncements, addRegistration, recordVisit, Announcement, Overrides } from './adminData';
@@ -42,7 +43,7 @@ import {
 import {
   BACKEND_ENABLED, AuthUser, watchUser, signInWithGoogle, signOutUser, fetchMyProfile, createMyProfile,
   checkTeamMembers, submitRegistration, backendError, remoteOverrides, remoteAnnouncements, fetchMyPass, fetchQrToken,
-  cachedProfile, cacheProfile, cachedQr, cacheQr, clearLocalSession
+  cachedProfile, cacheProfile, cachedQr, cacheQr, clearLocalSession, fetchMyStaff, type StaffInfo
 } from './backend';
 import { EVENT_SCHEDULE, KIND_LABEL, PASS_QUOTA, type EventKind, type MyPassData } from './schedule';
 // Public-folder files are served under the Vite base (the repo sub-path on GitHub Pages, '/' in dev).
@@ -4530,6 +4531,12 @@ function PassStatus({ data }: { data: MyPassData | null }) {
   );
 }
 
+// The scanner and admin panel are separate pages chosen when the site first loads, so switch with a reload.
+const openStaffPage = (hash: '#scan' | '#admin') => {
+  window.location.hash = hash;
+  window.location.reload();
+};
+
 function MyPassPage({ profile, onProfile, onHome, authUser, authReady }: {
   profile: Profile | null; onProfile: (p: Profile | null) => void; onHome: () => void;
   authUser: AuthUser | null; authReady: boolean;
@@ -4537,6 +4544,14 @@ function MyPassPage({ profile, onProfile, onHome, authUser, authReady }: {
   const [form, setForm] = useState({ name: '', email: '', phone: '', college: '' });
   const [busy, setBusy] = useState(false);
   const [remember, setRemember] = useState(true);
+  // Staff accounts (admins, coordinators, gate desk) get shortcuts to the scanner and admin panel below.
+  const [staff, setStaff] = useState<StaffInfo | null>(null);
+  useEffect(() => {
+    if (!BACKEND_ENABLED || !profile || !authUser) { setStaff(null); return; }
+    let stop = false;
+    fetchMyStaff(authUser.email).then((s) => { if (!stop) setStaff(s); }, () => { if (!stop) setStaff(null); });
+    return () => { stop = true; };
+  }, [authUser?.email, profile?.id]);   // eslint-disable-line react-hooks/exhaustive-deps
   const googleSignIn = () => {
     setBusy(true);
     signInWithGoogle(remember).catch((err) => window.alert(backendError(err))).finally(() => setBusy(false));
@@ -4643,6 +4658,29 @@ function MyPassPage({ profile, onProfile, onHome, authUser, authReady }: {
               </p>
               <PassStatus data={myPass} />
             </>
+          )}
+          {/* Staff only: shown when this Google account is on the server's staff list. The buttons are a
+              convenience; the scanner and admin pages (and the database) check the account again themselves. */}
+          {BACKEND_ENABLED && staff && (
+            <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 space-y-3 text-left">
+              <p className="text-[10px] font-mono font-bold tracking-widest text-amber-300">STAFF TOOLS · {staff.role.toUpperCase()}</p>
+              <div className={`grid gap-3 ${staff.role === 'admin' ? 'sm:grid-cols-2' : ''}`}>
+                <button
+                  onClick={() => openStaffPage('#scan')}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 text-black text-xs font-black tracking-widest"
+                >
+                  <ScanLine className="w-4 h-4" /> OPEN SCANNER
+                </button>
+                {staff.role === 'admin' && (
+                  <button
+                    onClick={() => openStaffPage('#admin')}
+                    className="inline-flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl border border-amber-500/50 text-amber-300 hover:bg-amber-500/10 text-xs font-black tracking-widest"
+                  >
+                    <Shield className="w-4 h-4" /> OPEN ADMIN PANEL
+                  </button>
+                )}
+              </div>
+            </div>
           )}
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             {qr && !BACKEND_ENABLED && (

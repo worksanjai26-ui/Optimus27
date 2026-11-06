@@ -4,6 +4,9 @@ import App from './App';
 import { restoreReturnHash } from './supabase';
 import './index.css';
 
+// The app loaded, so the start page's one-time self-heal reload (index.html) can be used again next time.
+try { sessionStorage.removeItem('optimus27.healed'); } catch { /* storage blocked */ }
+
 // Google sends people back to the site root; put the page they signed in from (#mypass, #admin, #scan) back.
 restoreReturnHash();
 

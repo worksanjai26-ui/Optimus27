@@ -99,6 +99,17 @@
       })();
     </script>
     <div id="root"></div>
+    <script>
+      // Self-heal: a page cached from before a new deploy points at script files that no longer exist, which
+      // would leave this loading screen up forever. If a script or style file fails to load, reload once
+      // (with a fresh address, so the browser fetches the current page) instead of hanging.
+      window.addEventListener('error', function (e) {
+        var t = e.target;
+        if (!t || (t.tagName !== 'SCRIPT' && t.tagName !== 'LINK')) return;
+        try { if (sessionStorage.getItem('optimus27.healed')) return; sessionStorage.setItem('optimus27.healed', '1'); } catch (x) { return; }
+        location.replace(location.pathname + '?r=' + Date.now() + location.hash);
+      }, true);
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
