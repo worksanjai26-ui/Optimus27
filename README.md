@@ -48,9 +48,10 @@ the arenas, pick a fest pass and register.
   | Two-Day Pass | ₹400 per person | 2 presentations, 2 workshops, 2 non-technical events |
 
 - **Optimus ID & My Pass** (`/#mypass`) — a personal fest ID (e.g. `OPT27-00142`) with a
-  QR code for event check-in. *Demo:* see [Optimus ID demo](#optimus-id-demo).
-- **Certificates** (`/#certificate`) — after the fest, enter your Optimus ID and name to
-  download one participation certificate per event you attended.
+  renewing QR code for gate and event check-in, plus your booked events and attendance. See [Sign-in, registration, QR attendance and certificates](#sign-in-registration-qr-attendance-and-certificates).
+- **Certificates** (`/#certificate`) — after the fest, download one participation certificate per
+  event you attended; booked events you missed say *You didn't attend this event*.
+- **QR scanner** (`/#scan`) — for coordinators: gate entry and per-event attendance, with a manual fallback.
 - **Phone-friendly layout** — bottom action bar, venue card with *Directions* and
   *Add dates* (calendar file), and a camera that pulls back so all four leaders fit.
 - **Runs on low-end phones and laptops** — see [Performance](#performance).
@@ -119,9 +120,14 @@ http://localhost:5178/?quality=high   # full effects, mirror floor
 │   ├── main.tsx             Entry point; routes /#admin to the admin panel
 │   ├── App.tsx              Site: 3D stage, leaders, events, passes, registration
 │   ├── AdminPage.tsx        Admin panel UI
+│   ├── ScanPage.tsx         Coordinators' QR scanner (/#scan)
+│   ├── schedule.ts          Event kinds, days and pass limits (mirrors supabase/schema.sql)
+│   ├── backend.ts           Supabase calls: sign-in, registration, QR, scans, admin data
 │   ├── adminData.ts         Admin data (localStorage), visitor counter, login
 │   ├── identity.ts          Optimus IDs, team checks, attendance (demo data layer)
 │   └── index.css            Tailwind entry
+├── supabase/schema.sql      Tables, row-level security and functions (run once in Supabase)
+├── tests/backend.test.mjs   Runs the schema in an in-process Postgres and checks the rules
 ├── public/
 │   ├── assets/              Logos (fest, KPR, ACM-W)
 │   ├── env/                 HDR environment lighting for the 3D scene
@@ -154,37 +160,37 @@ Drop glTF models into `public/models/` as `bumblebee-car.glb`, `megatron-car.glb
 
 ## Admin panel
 
-Open `/#admin` (or `/admin` on the dev server). Sign-in is enabled by setting the
-SHA-256 hash of the admin password:
+Open `/#admin` (or `/admin` on the dev server) and **sign in with Google**. Only accounts in the `staff` table with
+the `admin` role get in (the two organisers are added by `supabase/schema.sql`), and the database checks that again
+on every request; there is no password in the site. It lists registrations (search, filter, delete), announcements
+and event edits, and exports everything to **Excel (.xlsx)**: participants, a sheet per pass, gate entry and event
+attendance. The panel needs the Supabase backend: see **[README-SUPABASE.md](README-SUPABASE.md)**.
+The visitor counter uses the public [Abacus](https://abacus.jasoncameron.dev) counter API; dev-server visits are
+counted separately.
 
-```bash
-# .env.local (dev)  — or a repository variable for the deploy
-VITE_ADMIN_PASSWORD_SHA256=<sha256 of your password>
-```
+## Sign-in, registration, QR attendance and certificates
 
-> **Limitations:** this is a frontend-only admin. Registrations, edits and
-> announcements are stored in the **browser's localStorage**, so the panel only
-> shows data from the same browser, and the password hash ships in the public
-> bundle. Replace the functions in `src/adminData.ts` with real API calls before
-> relying on it for live registrations. The visitor counter uses the public
-> [Abacus](https://abacus.jasoncameron.dev) counter API; dev-server visits are
-> counted separately.
+With the Supabase backend configured:
 
-## Optimus ID demo
+1. Participants **sign in with Google** and get an Optimus ID issued by the server. A team leader adds teammates by
+   Optimus ID (the server checks each one); a person can be in one team per event.
+2. The **One-Day** and **Two-Day** passes book their events up front (1 or 2 of each kind); **Exclusive** includes
+   everything but the hackathon; **Hackathon** is the hackathon only.
+3. **My Pass** shows a QR that renews every minute. The gate desk scans it for entry (per day); each event's
+   coordinator scans it at **`/#scan`** for that event. A person's booked events and attendance show on My Pass.
+4. **Certificates** are issued only for events where the person was scanned; any booked event they missed says
+   *You didn't attend this event*.
 
-There is no backend yet, so `src/identity.ts` runs on the browser's **localStorage**:
-IDs are issued locally, teammates can only be checked against IDs created in the same
-browser, and attendance is sample data (pages show a *demo* note while
-`IDENTITY_DEMO` is `true`). The pages only call the functions in that file, so swapping
-their bodies for real API calls (sign-in, ID issuing, attendance lookups) is all the
-backend switch needs. Payments are not wired up yet.
+Without the `VITE_SUPABASE_*` values the site falls back to a browser-only **demo**: `src/identity.ts` runs on
+localStorage, IDs are issued locally, the scanner and admin panel are unavailable and pages show a *demo* note.
+Payments are not wired up yet. Setup, staff roles and the full flow are in **[README-SUPABASE.md](README-SUPABASE.md)**.
 
 ## Deployment
 
-Every push to `main` runs `.github/workflows/deploy.yml`, which builds the site and
-publishes `dist/` to **GitHub Pages**. To enable the admin login on the live site, add
-`VITE_ADMIN_PASSWORD_SHA256` under *Settings → Secrets and variables → Actions →
-Variables*.
+Every push to `main` runs `.github/workflows/deploy.yml`, which builds the site and publishes `dist/` to
+**GitHub Pages**. The Supabase URL and anon key are passed in from repository *variables* (*Settings > Secrets and
+variables > Actions > Variables*); the database itself is set up once by running `supabase/schema.sql`, see
+[README-SUPABASE.md](README-SUPABASE.md).
 
 ## Credits
 

@@ -31,7 +31,8 @@ import {
   MapPin,
   CalendarPlus,
   Award,
-  Download
+  Download,
+  ScanLine
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { listOverrides, listAnnouncements, addRegistration, recordVisit, Announcement, Overrides } from './adminData';
@@ -39,6 +40,12 @@ import {
   IDENTITY_DEMO, Profile, currentProfile, createProfile, signOutProfile, findProfile, qrPayload,
   isOptimusId, isCapsName, normalizeName, checkMember, MemberCheck, attendedEvents
 } from './identity';
+import {
+  BACKEND_ENABLED, AuthUser, watchUser, signInWithGoogle, signOutUser, fetchMyProfile, createMyProfile,
+  checkTeamMembers, submitRegistration, backendError, remoteOverrides, remoteAnnouncements, fetchMyPass, fetchQrToken,
+  cachedProfile, cacheProfile, cachedQr, cacheQr, clearLocalSession, fetchMyStaff, type StaffInfo
+} from './backend';
+import { EVENT_SCHEDULE, KIND_LABEL, PASS_QUOTA, type EventKind, type MyPassData } from './schedule';
 // Public-folder files are served under the Vite base (the repo sub-path on GitHub Pages, '/' in dev).
 const BASE =import.meta.env.BASE_URL;
 
@@ -651,6 +658,65 @@ const passById = (id: PassId) => PASSES.find((p) => p.id === id)!;
 const passesFor = (ev: EventItem) => PASSES.filter((p) => (ev.id === 'hackathon' ? p.hackathon : p.id !== 'hackathon'));
 export const inr = (n: number) => '₹' + n.toLocaleString('en-IN');
 
+/* ====================== EVENT BOOKING (ONE / TWO-DAY) ===================== */
+const eventTitle = (id: string) => HEROES.flatMap((h) => h.events).find((e) => e.id === id)?.title ?? id;
+const PICK_KINDS = ['presentation', 'workshop', 'nontech'] as const;
+const KIND_PLURAL: Record<(typeof PICK_KINDS)[number], string> = { presentation: 'PRESENTATIONS', workshop: 'WORKSHOPS', nontech: 'NON-TECHNICAL' };
+
+// What the pass allows: the One-Day and Two-Day passes need their events booked up front; the
+// Exclusive pass simply includes every event except the hackathon.
+function EventPicker({ pass, day, selected, onChange, ring, text }: {
+  pass: 'oneday' | 'twoday'; day: number; selected: string[]; onChange: (ids: string[]) => void; ring: string; text: string;
+}) {
+  const quota = PASS_QUOTA[pass];
+  const count = (k: EventKind) => selected.filter((id) => EVENT_SCHEDULE[id]?.kind === k).length;
+  const toggle = (id: string) => onChange(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
+  return (
+    <div className="space-y-4">
+      <p className="text-[11px] text-slate-400">
+        Book your events now: you can only attend the events you pick, and your QR shows them at the door.
+        {pass === 'oneday' ? ` Only events on ${FEST_DAYS[day]} are listed.` : ' Pick any days; attendance is recorded for each day.'}
+      </p>
+      {PICK_KINDS.map((kind) => {
+        const full = count(kind) >= quota[kind];
+        const options = Object.entries(EVENT_SCHEDULE).filter(([, s]) => s.kind === kind && (pass === 'twoday' || s.day === day));
+        return (
+          <div key={kind}>
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-xs font-mono text-slate-400">{KIND_PLURAL[kind]}</span>
+              <span className={`text-[10px] font-mono font-bold tracking-widest ${full ? text : 'text-slate-500'}`}>{count(kind)} / {quota[kind]} PICKED</span>
+            </div>
+            <div className="space-y-1.5">
+              {options.map(([id, s]) => {
+                const on = selected.includes(id);
+                const locked = !on && full;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    aria-pressed={on}
+                    disabled={locked}
+                    onClick={() => toggle(id)}
+                    className={`w-full flex items-center justify-between gap-3 text-left px-3 py-2.5 rounded-xl border transition-colors ${on ? `${ring} bg-slate-950` : 'border-slate-800 bg-slate-950/80 hover:border-slate-600'} ${locked ? 'opacity-40 cursor-not-allowed' : ''}`}
+                  >
+                    <span className="flex items-center gap-2.5 min-w-0">
+                      <span className={`shrink-0 w-4 h-4 rounded border flex items-center justify-center ${on ? `${ring} ${text}` : 'border-slate-600'}`}>
+                        {on && <CheckCircle className="w-3.5 h-3.5" />}
+                      </span>
+                      <span className="text-xs font-bold tracking-wide text-slate-100 truncate">{eventTitle(id)}</span>
+                    </span>
+                    <span className="shrink-0 text-[10px] font-mono tracking-widest text-slate-400">{FEST_DAYS[s.day]}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /* ==================== THREE.JS HERO BACKGROUND ==================== */
 // Cinematic procedural stage. Mechs are built from faceted, extruded armour
 // plates over an exposed mechanical frame, finished with weathered PBR paint
@@ -1081,7 +1147,7 @@ const ThreeHeroBackground = ({
 
     /* ---------- renderer / camera ---------- */
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x0b1628, 0.014);
+    scene.fog = new THREE.FogExp2(0x0b1628, 0.0105);   // lighter haze: the leaders in the distance stay crisp
 
     const camera = new THREE.PerspectiveCamera(48, size0.w / size0.h, 0.5, 400);
     camera.position.set(0, 2.2, 18);
@@ -1090,8 +1156,17 @@ const ThreeHeroBackground = ({
     // itself needs no MSAA. Render scale adapts to the frame rate (see animate()).
     // In lite mode there is no composer, so the canvas does its own (cheap) MSAA.
     const renderer = new THREE.WebGLRenderer({ antialias: lite, powerPreference: 'high-performance' });
-    const DPR_MAX = Math.min(window.devicePixelRatio, tier === 'high' && !isPhone ? 1.25 : 1);
-    const DPR_MIN = lite ? 0.5 : 0.7;
+    // Sharper leaders: start at a higher render scale where the device can take it. The adaptive step in
+    // animate() still lowers it (and then the effects) on any device that runs slow, so this cannot cause lag
+    // for long. Lite (weak) devices stay at 1.
+    const strongDevice = (navigator.hardwareConcurrency || 4) >= 6;
+    const DPR_MAX = Math.min(
+      window.devicePixelRatio,
+      lite ? 1 : isPhone ? (strongDevice ? 1.5 : 1.25) : tier === 'high' ? 1.5 : 1.25
+    );
+    // Never render below the screen's real pixels (0.85 on the weakest devices): a lower scale is what made the
+    // leaders look blurry. A slow device now sheds effects (bloom, mirror floor, shadows) first, which keeps them sharp.
+    const DPR_MIN = Math.min(DPR_MAX, lite ? 0.85 : 1);
     let dprCap = DPR_MAX;   // lowered once effects have been shed, so the scale never creeps back up into lag
     let dpr = DPR_MAX;
     renderer.setSize(size0.w, size0.h);
@@ -2888,7 +2963,8 @@ const ThreeHeroBackground = ({
     // multisampled target to keep edges clean.
     // Lite mode skips the whole chain: four full-screen passes plus bloom's blur
     // pyramid are what weak GPUs choke on.
-    const samples = lowPower ? 0 : Math.min(isPhone ? 2 : 4, renderer.capabilities.maxSamples);
+    // Edge smoothing on every tier that uses the composer (2 samples on lighter devices, 4 on strong desktops).
+    const samples = Math.min(lowPower || isPhone ? 2 : 4, renderer.capabilities.maxSamples);
     const composer = lite ? null : new EffectComposer(renderer, new THREE.WebGLRenderTarget(size0.w, size0.h, { type: THREE.HalfFloatType, samples }));
     composer?.setSize(size0.w, size0.h);
     composer?.setPixelRatio(dpr);
@@ -4272,12 +4348,13 @@ function CertFrame({ children }: { children: React.ReactNode }) {
   );
 }
 
-function CertificatePage({ onHome }: { onHome: () => void }) {
+function CertificatePage({ onHome, profile, onMyPass }: { onHome: () => void; profile: Profile | null; onMyPass: () => void }) {
   const [optimusId, setOptimusId] = useState('');
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<null | 'locked' | 'none'>(null);
-  const [results, setResults] = useState<{ name: string; id: string; certs: CertResult[] } | null>(null);
+  // missed = booked events the person was never scanned at: no certificate, and the page says so.
+  const [results, setResults] = useState<{ name: string; id: string; certs: CertResult[]; missed: { id: string; title: string; arena: string }[] } | null>(null);
   const [onResults, setOnResults] = useState(false);
 
   useEffect(() => () => results?.certs.forEach((c) => URL.revokeObjectURL(c.url)), [results]);
@@ -4297,40 +4374,65 @@ function CertificatePage({ onHome }: { onHome: () => void }) {
       setNotice('locked');
       return;
     }
-    const id = optimusId.trim().toUpperCase();
-    const nm = normalizeName(name);
-    if (!isOptimusId(id)) {
-      window.alert('Please enter a valid Optimus ID, e.g. OPT27-00142.');
-      return;
+    const find = (eid: string) => ALL_EVENTS.find((ev) => ev.id === eid);
+    let id: string, nm: string;
+    let attended: (typeof ALL_EVENTS)[number][];
+    let missed: { id: string; title: string; arena: string }[] = [];
+    if (BACKEND_ENABLED) {
+      // The signed-in account decides who you are (no typing an ID or name); the server decides what you attended.
+      if (!profile) return;
+      id = profile.id;
+      nm = profile.name;
+      setBusy(true);
+      try {
+        const mine = await fetchMyPass();
+        const known = mine.events.map((b) => ({ b, ev: find(b.eventId) })).filter((x): x is { b: typeof x.b; ev: (typeof ALL_EVENTS)[number] } => !!x.ev);
+        attended = known.filter((x) => x.b.attended).map((x) => x.ev);
+        missed = known.filter((x) => !x.b.attended).map((x) => ({ id: x.ev.id, title: x.ev.title, arena: x.ev.heroName }));
+      } catch (err) {
+        setBusy(false);
+        window.alert(backendError(err));
+        return;
+      }
+      if (!attended.length && !missed.length) {
+        setBusy(false);
+        setNotice('none');
+        return;
+      }
+    } else {
+      id = optimusId.trim().toUpperCase();
+      nm = normalizeName(name);
+      if (!isOptimusId(id)) {
+        window.alert('Please enter a valid Optimus ID, e.g. OPT27-00142.');
+        return;
+      }
+      if (!nm) {
+        window.alert('Please enter your name.');
+        return;
+      }
+      if (!isCapsName(nm)) {
+        window.alert('Name must be in CAPITAL LETTERS only (for example: JOSEPH VIJAY).');
+        return;
+      }
+      const owner = findProfile(id);
+      if (owner && owner.name !== nm) {
+        window.alert('This name does not match the name registered for this Optimus ID.');
+        return;
+      }
+      attended = attendedEvents(id).map(find).filter((ev): ev is (typeof ALL_EVENTS)[number] => !!ev);
+      if (!attended.length) {
+        setNotice('none');
+        return;
+      }
+      setBusy(true);
     }
-    if (!nm) {
-      window.alert('Please enter your name.');
-      return;
-    }
-    if (!isCapsName(nm)) {
-      window.alert('Name must be in CAPITAL LETTERS only (for example: JOSEPH VIJAY).');
-      return;
-    }
-    const owner = findProfile(id);
-    if (owner && owner.name !== nm) {
-      window.alert('This name does not match the name registered for this Optimus ID.');
-      return;
-    }
-    const attended = attendedEvents(id)
-      .map((eid) => ALL_EVENTS.find((ev) => ev.id === eid))
-      .filter((ev): ev is (typeof ALL_EVENTS)[number] => !!ev);
-    if (!attended.length) {
-      setNotice('none');
-      return;
-    }
-    setBusy(true);
     try {
       const certs: CertResult[] = [];
       for (const ev of attended) {
         const url = await canvasUrl(await drawCertificate(nm, id, ev.title));
         certs.push({ eventId: ev.id, title: ev.title, arena: ev.heroName, url, file: `OPTIMUS27-${id}-${ev.id}.png` });
       }
-      setResults({ name: nm, id, certs });
+      setResults({ name: nm, id, certs, missed });
       setOnResults(true);
       history.pushState(null, '', '#certificate/results');
       window.scrollTo({ top: 0 });
@@ -4356,7 +4458,7 @@ function CertificatePage({ onHome }: { onHome: () => void }) {
             Your Certificates
           </h1>
           <p className="text-slate-300 text-sm sm:text-base">
-            <span className="font-bold text-white">{results.name}</span> · <span className="font-mono">{results.id}</span> · {results.certs.length} event{results.certs.length > 1 ? 's' : ''} attended
+            <span className="font-bold text-white">{results.name}</span> · <span className="font-mono">{results.id}</span> · {results.certs.length} event{results.certs.length === 1 ? '' : 's'} attended
           </p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -4378,8 +4480,18 @@ function CertificatePage({ onHome }: { onHome: () => void }) {
               </div>
             </div>
           ))}
+          {results.missed.map((m) => (
+            <div key={m.id} className="rounded-3xl bg-slate-900/70 border border-rose-500/30 p-5 flex items-center gap-4">
+              <div className="shrink-0 w-12 h-12 rounded-2xl border border-rose-500/40 bg-rose-500/10 text-rose-300 flex items-center justify-center"><X className="w-6 h-6" /></div>
+              <div className="min-w-0">
+                <p className="text-sm font-black tracking-wide text-white truncate">{m.title}</p>
+                <p className="text-[11px] font-mono tracking-widest text-slate-400">{m.arena} ARENA</p>
+                <p className="mt-1 text-sm text-rose-300">You didn't attend this event, so no certificate can be issued.</p>
+              </div>
+            </div>
+          ))}
         </div>
-        {IDENTITY_DEMO && <DemoNote>Attendance shown here is sample data until the QR attendance backend is connected.</DemoNote>}
+        {IDENTITY_DEMO && !BACKEND_ENABLED && <DemoNote>Attendance shown here is sample data until the QR attendance backend is connected.</DemoNote>}
       </section>
     );
   }
@@ -4400,11 +4512,28 @@ function CertificatePage({ onHome }: { onHome: () => void }) {
           Get Your Certificate
         </h1>
         <p className="cert-in text-slate-300 text-sm sm:text-base" style={{ animationDelay: '1.05s' }}>
-          Enter your Optimus ID and your name in capital letters. You get one certificate for every event your attendance was recorded at.
+          {BACKEND_ENABLED
+            ? 'Sign in with the Google account you registered with. You get one certificate for every event where your QR was scanned.'
+            : 'Enter your Optimus ID and your name in capital letters. You get one certificate for every event your attendance was recorded at.'}
         </p>
       </div>
 
       <form onSubmit={submit} noValidate className="cert-in max-w-xl mx-auto rounded-3xl bg-slate-950/85 border border-cyan-400/30 shadow-[0_30px_80px_-30px_rgba(34,211,238,.35)] p-6 sm:p-8 space-y-5" style={{ animationDelay: '1.15s' }}>
+        {BACKEND_ENABLED && (profile ? (
+          <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 text-center">
+            <p className="text-[10px] font-mono tracking-widest text-slate-500">CERTIFICATE FOR</p>
+            <p className="text-lg font-black tracking-wide text-white">{profile.name}</p>
+            <p className="text-xs font-mono text-amber-300">{profile.id}</p>
+          </div>
+        ) : (
+          <div className="text-center space-y-4">
+            <p className="text-sm text-slate-300">Sign in first so the certificates are issued to the right person.</p>
+            <button type="button" onClick={onMyPass} className="w-full py-3.5 rounded-xl bg-white text-slate-900 text-xs font-black tracking-widest">
+              SIGN IN WITH GOOGLE
+            </button>
+          </div>
+        ))}
+        {!BACKEND_ENABLED && <>
         <div>
           <label htmlFor="cert-id" className="text-xs font-mono font-bold tracking-widest text-slate-400 block mb-1.5">OPTIMUS ID</label>
           <input
@@ -4430,9 +4559,10 @@ function CertificatePage({ onHome }: { onHome: () => void }) {
             className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm tracking-wide focus:outline-none focus:border-cyan-400"
           />
         </div>
+        </>}
         <button
           type="submit"
-          disabled={busy}
+          disabled={busy || (BACKEND_ENABLED && !profile)}
           className="w-full py-4 rounded-xl bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 hover:from-amber-300 hover:to-yellow-400 text-black text-xs font-black tracking-widest flex items-center justify-center gap-2 disabled:opacity-60"
         >
           <Award className="w-4 h-4" /> {busy ? 'CREATING CERTIFICATES…' : 'GET CERTIFICATE'}
@@ -4447,7 +4577,7 @@ function CertificatePage({ onHome }: { onHome: () => void }) {
         )}
         {notice === 'none' && (
           <div role="status" className="rounded-2xl border border-rose-500/40 bg-rose-500/10 px-5 py-4 text-center space-y-1.5">
-            <p className="text-sm font-black tracking-widest text-rose-300">NO ATTENDANCE FOUND</p>
+            <p className="text-sm font-black tracking-widest text-rose-300">{BACKEND_ENABLED ? "YOU DIDN'T ATTEND ANY EVENT" : 'NO ATTENDANCE FOUND'}</p>
             <p className="text-sm text-slate-300">
               Certificates are issued only for events where your QR was scanned. Contact the organisers if this looks wrong.
             </p>
@@ -4459,24 +4589,120 @@ function CertificatePage({ onHome }: { onHome: () => void }) {
   );
 }
 
-function MyPassPage({ profile, onProfile, onHome }: { profile: Profile | null; onProfile: (p: Profile | null) => void; onHome: () => void }) {
+// Gate check-in per day and every booked event with its attendance, in the fest's own colours:
+// energon green once you are in, amber while you are still to be scanned.
+function PassStatus({ data }: { data: MyPassData | null }) {
+  if (!data) return <p className="text-xs font-mono text-slate-500">Loading your bookings…</p>;
+  if (!data.passes.length) {
+    return <p className="text-sm text-slate-300">You have not registered for a pass yet. Pick one in <span className="font-bold text-white">FEST PASSES</span> to book your events.</p>;
+  }
+  const chip = (ok: boolean, yes: string, no: string) => (
+    <span className={`shrink-0 px-2 py-0.5 rounded text-[10px] font-mono font-bold tracking-widest border ${ok ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40' : 'bg-amber-500/10 text-amber-300 border-amber-500/30'}`}>
+      {ok ? yes : no}
+    </span>
+  );
+  const days = [...new Set(data.events.map((e) => e.day))].sort();
+  return (
+    <div className="text-left space-y-4">
+      {days.map((day) => (
+        <div key={day} className="rounded-2xl bg-slate-950 border border-slate-800 overflow-hidden">
+          <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-slate-900 border-b border-slate-800">
+            <span className="text-xs font-mono font-black tracking-widest text-white">DAY {day + 1} · {FEST_DAYS[day]}</span>
+            {chip(data.entryDays.includes(day), 'AT THE FEST', 'GATE CHECK-IN PENDING')}
+          </div>
+          <ul className="divide-y divide-slate-800/80">
+            {data.events.filter((e) => e.day === day).map((e) => (
+              <li key={e.eventId} className="flex items-center justify-between gap-3 px-4 py-2.5">
+                <span className="min-w-0">
+                  <span className="block text-sm font-bold text-slate-100 truncate">{eventTitle(e.eventId)}</span>
+                  <span className="block text-[10px] font-mono tracking-widest text-slate-500">{KIND_LABEL[EVENT_SCHEDULE[e.eventId]?.kind ?? 'nontech'].toUpperCase()}</span>
+                </span>
+                {chip(e.attended, 'ATTENDED', 'BOOKED')}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// The scanner and admin panel are separate pages chosen when the site first loads, so switch with a reload.
+const openStaffPage = (hash: '#scan' | '#admin') => {
+  window.location.hash = hash;
+  window.location.reload();
+};
+
+function MyPassPage({ profile, onProfile, onHome, authUser, authReady }: {
+  profile: Profile | null; onProfile: (p: Profile | null) => void; onHome: () => void;
+  authUser: AuthUser | null; authReady: boolean;
+}) {
   const [form, setForm] = useState({ name: '', email: '', phone: '', college: '' });
-  const [qr, setQr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [remember, setRemember] = useState(true);
+  // Staff accounts (admins, coordinators, gate desk) get shortcuts to the scanner and admin panel below.
+  const [staff, setStaff] = useState<StaffInfo | null>(null);
   useEffect(() => {
-    if (!profile) { setQr(''); return; }
-    QRCode.toDataURL(qrPayload(profile), { width: 480, margin: 1, errorCorrectionLevel: 'M', color: { dark: '#020617', light: '#ffffff' } })
-      .then(setQr, () => setQr(''));
-  }, [profile]);
+    if (!BACKEND_ENABLED || !profile || !authUser) { setStaff(null); return; }
+    let stop = false;
+    fetchMyStaff(authUser.email).then((s) => { if (!stop) setStaff(s); }, () => { if (!stop) setStaff(null); });
+    return () => { stop = true; };
+  }, [authUser?.email, profile?.id]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const googleSignIn = () => {
+    setBusy(true);
+    signInWithGoogle(remember).catch((err) => window.alert(backendError(err))).finally(() => setBusy(false));
+  };
+  // The last QR is kept on the device until sign-out, so My Pass shows it the moment the page opens (dimmed with
+  // "UPDATING" until a fresh one arrives) and it never vanishes because of a slow or dropped connection.
+  const [qr, setQr] = useState(() => (BACKEND_ENABLED ? cachedQr() : ''));
+  const [qrFresh, setQrFresh] = useState(!BACKEND_ENABLED);
+  const [qrOffline, setQrOffline] = useState(false);
+  const [myPass, setMyPass] = useState<MyPassData | null>(null);
+  useEffect(() => {
+    if (!profile) { if (!BACKEND_ENABLED) setQr(''); setMyPass(null); return; }
+    const draw = (text: string) =>
+      QRCode.toDataURL(text, { width: 480, margin: 1, errorCorrectionLevel: 'M', color: { dark: '#020617', light: '#ffffff' } });
+    if (!BACKEND_ENABLED) {
+      draw(qrPayload(profile)).then(setQr, () => setQr(''));
+      return;
+    }
+    // The QR is signed by the server and expires after two minutes, so a screenshot of it is useless.
+    // It refreshes every minute; the booked events and attendance refresh a little faster so a scan shows up.
+    let stop = false;
+    let retry = 0;
+    const refreshQr = () => {
+      clearTimeout(retry);
+      return fetchQrToken().then(draw).then(
+        (url) => { if (!stop) { setQr(url); cacheQr(url); setQrFresh(true); setQrOffline(false); } },
+        () => { if (!stop) { setQrFresh(false); setQrOffline(true); retry = window.setTimeout(refreshQr, 8000); } }   // keep the old QR, try again soon
+      );
+    };
+    const refreshPass = () => fetchMyPass().then((d) => { if (!stop) setMyPass(d); }, () => {});
+    refreshQr(); refreshPass();
+    const qrTimer = window.setInterval(refreshQr, 60000);
+    const passTimer = window.setInterval(refreshPass, 20000);
+    const onVisible = () => { if (document.visibilityState === 'visible') { refreshQr(); refreshPass(); } };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { stop = true; clearTimeout(retry); clearInterval(qrTimer); clearInterval(passTimer); document.removeEventListener('visibilitychange', onVisible); };
+  }, [profile?.id]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const create = (e: React.FormEvent) => {
     e.preventDefault();
     const name = normalizeName(form.name);
-    if (!name || !form.email.trim() || !form.phone.trim() || !form.college.trim()) {
+    if (!name || (!BACKEND_ENABLED && !form.email.trim()) || !form.phone.trim() || !form.college.trim()) {
       window.alert('Please fill in all the details.');
       return;
     }
     if (!isCapsName(name)) {
       window.alert('Name must be in CAPITAL LETTERS only (for example: JOSEPH VIJAY).');
+      return;
+    }
+    if (BACKEND_ENABLED) {
+      // The server issues the ID and takes the email from the verified Google account.
+      setBusy(true);
+      createMyProfile({ name, phone: form.phone.trim(), college: form.college.trim() })
+        .then(onProfile, (err) => window.alert(backendError(err)))
+        .finally(() => setBusy(false));
       return;
     }
     onProfile(createProfile({ name, email: form.email.trim(), phone: form.phone.trim(), college: form.college.trim() }));
@@ -4500,7 +4726,7 @@ function MyPassPage({ profile, onProfile, onHome }: { profile: Profile | null; o
         </h1>
         <p className="text-slate-300 text-sm sm:text-base">
           {profile
-            ? 'Show this QR at every event so your attendance is recorded. Certificates are issued only for scanned events.'
+            ? 'Show this QR at the gate when you arrive and again at each event you booked. Certificates are issued only for events where you were scanned.'
             : 'Every participant needs an Optimus ID to register, join a team and get certificates.'}
         </p>
       </div>
@@ -4513,11 +4739,47 @@ function MyPassPage({ profile, onProfile, onHome }: { profile: Profile | null; o
             <p className="mt-2 text-lg font-black tracking-wide text-white">{profile.name}</p>
             <p className="text-xs text-slate-400">{profile.college}</p>
           </div>
-          <div className="mx-auto w-56 sm:w-64 aspect-square rounded-2xl bg-white p-3">
+          <div className="relative mx-auto w-56 sm:w-64 aspect-square rounded-2xl bg-white p-3">
             {qr && <img src={qr} alt={`QR code for ${profile.id}`} className="w-full h-full" />}
+            {qr && !qrFresh && BACKEND_ENABLED && (
+              <div className="absolute inset-0 rounded-2xl bg-white/75 flex items-center justify-center text-[11px] font-mono font-bold tracking-widest text-slate-700">UPDATING…</div>
+            )}
           </div>
+          {BACKEND_ENABLED && (
+            <>
+              <p className="text-[11px] font-mono text-slate-400 leading-relaxed">
+                {qrOffline
+                  ? 'No connection: the QR may have expired. Tell the coordinator your Optimus ID and they can check you in by hand.'
+                  : 'This QR carries your Optimus ID and the events you booked (listed below). It renews every minute, so keep this page open. A screenshot will not work at the door.'}
+              </p>
+              <PassStatus data={myPass} />
+            </>
+          )}
+          {/* Staff only: shown when this Google account is on the server's staff list. The buttons are a
+              convenience; the scanner and admin pages (and the database) check the account again themselves. */}
+          {BACKEND_ENABLED && staff && (
+            <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 space-y-3 text-left">
+              <p className="text-[10px] font-mono font-bold tracking-widest text-amber-300">STAFF TOOLS · {staff.role.toUpperCase()}</p>
+              <div className={`grid gap-3 ${staff.role === 'admin' ? 'sm:grid-cols-2' : ''}`}>
+                <button
+                  onClick={() => openStaffPage('#scan')}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 text-black text-xs font-black tracking-widest"
+                >
+                  <ScanLine className="w-4 h-4" /> OPEN SCANNER
+                </button>
+                {staff.role === 'admin' && (
+                  <button
+                    onClick={() => openStaffPage('#admin')}
+                    className="inline-flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl border border-amber-500/50 text-amber-300 hover:bg-amber-500/10 text-xs font-black tracking-widest"
+                  >
+                    <Shield className="w-4 h-4" /> OPEN ADMIN PANEL
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
-            {qr && (
+            {qr && !BACKEND_ENABLED && (
               <a
                 href={qr}
                 download={`${profile.id}-QR.png`}
@@ -4527,12 +4789,65 @@ function MyPassPage({ profile, onProfile, onHome }: { profile: Profile | null; o
               </a>
             )}
             <button
-              onClick={() => { signOutProfile(); onProfile(null); }}
+              onClick={() => { if (BACKEND_ENABLED) signOutUser(); else { signOutProfile(); onProfile(null); } }}
               className="px-6 py-3 rounded-xl border border-slate-700 text-slate-300 hover:text-white text-xs font-mono font-bold tracking-widest"
             >
               SIGN OUT
             </button>
           </div>
+        </div>
+      ) : BACKEND_ENABLED ? (
+        <div className="max-w-xl mx-auto rounded-3xl bg-slate-900/90 border border-slate-800 p-6 sm:p-8 space-y-5">
+          {!authReady ? (
+            <p className="text-center text-sm font-mono text-slate-400">Checking your sign-in…</p>
+          ) : !authUser ? (
+            <>
+              <button
+                type="button"
+                onClick={googleSignIn}
+                disabled={busy}
+                className="w-full py-3.5 rounded-xl bg-white text-slate-900 text-xs font-black tracking-widest flex items-center justify-center gap-2 disabled:opacity-60"
+              >
+                <span className="text-base leading-none font-black">G</span> {busy ? 'OPENING GOOGLE…' : 'SIGN IN WITH GOOGLE'}
+              </button>
+              <label className="flex items-center justify-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
+                <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} className="w-4 h-4 accent-amber-400" />
+                Remember me on this device
+              </label>
+              <p className="text-xs text-slate-400 text-center leading-relaxed">
+                Your Optimus ID is tied to your Google account, so only you can use it. Your details are stored securely and are never shown to other participants.
+              </p>
+            </>
+          ) : (
+            <form onSubmit={create} noValidate className="space-y-5">
+              <div className="flex items-center justify-between gap-3 text-xs">
+                <span className="font-mono text-slate-400 truncate">Signed in as <span className="text-slate-200">{authUser.email}</span></span>
+                <button type="button" onClick={() => signOutUser()} className="shrink-0 font-mono font-bold tracking-widest text-slate-400 hover:text-white">SWITCH</button>
+              </div>
+              <div>
+                <label htmlFor="mp-name" className={label}>NAME (CAPITAL LETTERS ONLY)</label>
+                <input id="mp-name" type="text" autoComplete="name" placeholder="e.g. JOSEPH VIJAY" value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })} className={field} />
+              </div>
+              <div>
+                <label htmlFor="mp-college" className={label}>COLLEGE / INSTITUTION</label>
+                <input id="mp-college" type="text" autoComplete="organization" placeholder="Your college name" value={form.college}
+                  onChange={(e) => setForm({ ...form, college: e.target.value })} className={field} />
+              </div>
+              <div>
+                <label htmlFor="mp-phone" className={label}>PHONE</label>
+                <input id="mp-phone" type="tel" autoComplete="tel" placeholder="+91 9876543210" value={form.phone}
+                  onChange={(e) => setForm({ ...form, phone: e.target.value })} className={field} />
+              </div>
+              <button
+                type="submit"
+                disabled={busy}
+                className="w-full py-4 rounded-xl bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 text-black text-xs font-black tracking-widest flex items-center justify-center gap-2 disabled:opacity-60"
+              >
+                <QrCode className="w-4 h-4" /> {busy ? 'CREATING…' : 'GET OPTIMUS ID'}
+              </button>
+            </form>
+          )}
         </div>
       ) : (
         <form onSubmit={create} noValidate className="max-w-xl mx-auto rounded-3xl bg-slate-900/90 border border-slate-800 p-6 sm:p-8 space-y-5">
@@ -4577,7 +4892,7 @@ function MyPassPage({ profile, onProfile, onHome }: { profile: Profile | null; o
           </button>
         </form>
       )}
-      {IDENTITY_DEMO && <DemoNote>IDs are saved only in this browser until Google sign-in and the backend are connected.</DemoNote>}
+      {IDENTITY_DEMO && !BACKEND_ENABLED && <DemoNote>IDs are saved only in this browser until Google sign-in and the backend are connected.</DemoNote>}
     </section>
   );
 }
@@ -5088,7 +5403,9 @@ export default function App() {
     return () => window.removeEventListener('pointerdown', onDown);
   }, []);
   const [subPage, setSubPage] = useState<SubPage>(subPageFromHash);
-  const [profile, setProfile] = useState<Profile | null>(currentProfile);
+  // With the backend, the last profile is kept on this device until sign-out so My Pass and the header never
+  // flash back to "sign in" while the session is being restored or the connection is slow.
+  const [profile, setProfile] = useState<Profile | null>(BACKEND_ENABLED ? cachedProfile : currentProfile);
   // Home is two pages: the hero on its own (nothing to scroll to) and, after EXPLORE, the rest of the
   // site starting at the techno-fest headline. 'opening' is the first-time timed transition between them.
   const [homePhase, setHomePhase] = useState<'hero' | 'opening' | 'explored'>('hero');
@@ -5186,15 +5503,38 @@ export default function App() {
   const [dismissedNotices, setDismissedNotices] = useState<string[]>([]);
   useEffect(() => {
     recordVisit();
+    if (BACKEND_ENABLED) return;   // the shared copies are loaded below
     const overrides = listOverrides();
     if (Object.keys(overrides).length) { applyOverrides(overrides); setContentRev((r) => r + 1); }
     setAnnouncements(listAnnouncements().filter((a) => a.active));
   }, []);
+
+  /* ---- Google sign-in and shared data (only when the Supabase backend is configured) ---- */
+  // Starts once the entry screen is gone, so the backend never competes with the first load.
+  const backendOn = BACKEND_ENABLED && gate === 'gone';
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [authReady, setAuthReady] = useState(!BACKEND_ENABLED);
+  useEffect(() => {
+    if (!backendOn) return;
+    return watchUser((u) => {
+      setAuthUser(u);
+      if (!u) { setProfile(null); clearLocalSession(); setAuthReady(true); return; }
+      setProfile((cur) => (cur && cur.email === u.email ? cur : null));   // never show another account's profile
+      // A failed lookup (bad signal) keeps what is on screen; only a real "no profile yet" or sign-out clears it.
+      fetchMyProfile(u.uid).then((p) => { cacheProfile(p); setProfile(p); }, () => {}).finally(() => setAuthReady(true));
+    });
+  }, [backendOn]);
+  useEffect(() => {
+    if (!backendOn) return;
+    remoteOverrides().then((o) => { if (Object.keys(o).length) { applyOverrides(o); setContentRev((r) => r + 1); } }, () => {});
+    remoteAnnouncements().then((a) => setAnnouncements(a.filter((x) => x.active)), () => {});
+  }, [backendOn]);
   const notices = announcements.filter((a) => !dismissedNotices.includes(a.id)).slice(0, 3);
 
   const [formData, setFormData] = useState({
     pass: 'hackathon' as PassId,
     day: 0,
+    events: [] as string[],   // booked up front on the One-Day and Two-Day passes
     teamSize: 2,
     teamName: '',
     // Members 2–4 of a hackathon team, added by Optimus ID + name. The leader is the signed-in user.
@@ -5202,8 +5542,33 @@ export default function App() {
   });
   const teamMembers = formData.members.slice(0, formData.teamSize - 1);
   // Live check for each teammate row (ID format, exists, name matches, no repeats).
+  // With the backend connected the server does the check (it alone knows who exists and who is already in a
+  // team, and it never reveals anyone's details); without it, the browser-only demo check is used.
+  const [remoteChecks, setRemoteChecks] = useState<(MemberCheck | null)[]>([]);
+  const memberKey = JSON.stringify(teamMembers);
+  const teamPassId = passById(formData.pass).team ? formData.pass : null;
+  useEffect(() => {
+    if (!BACKEND_ENABLED || !profile || !teamPassId || !isRegisterOpen) return;
+    const rows = teamMembers.map((m) => ({ id: m.id.trim().toUpperCase(), name: normalizeName(m.name) }));
+    const filled = rows.map((r, i) => (r.id || r.name ? i : -1)).filter((i) => i >= 0);
+    if (!filled.length) { setRemoteChecks([]); return; }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      checkTeamMembers(teamPassId, filled.map((i) => rows[i])).then(
+        (res) => {
+          if (cancelled) return;
+          const out: (MemberCheck | null)[] = rows.map(() => null);
+          filled.forEach((rowIndex, k) => { out[rowIndex] = res[k]; });
+          setRemoteChecks(out);
+        },
+        () => { if (!cancelled) setRemoteChecks([]); }
+      );
+    }, 600);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [memberKey, teamPassId, profile?.id, isRegisterOpen]);   // eslint-disable-line react-hooks/exhaustive-deps
   const memberChecks: (MemberCheck | null)[] = teamMembers.map((m, i) => {
     if (!m.id.trim() && !m.name.trim()) return null;
+    if (BACKEND_ENABLED) return remoteChecks[i] ?? null;
     const others = [profile?.id ?? '', ...teamMembers.slice(0, i).map((o) => o.id.trim())];
     return checkMember(m.id.trim(), m.name, others);
   });
@@ -5221,6 +5586,34 @@ export default function App() {
   const introDelay = (extra: number) => `${(introPlaying ? 3.6 : 0.05) + extra}s`;
   const t = THEME[active ? active.theme : 'amber'];
 
+  /* ---- which home section is on screen (drives the phone bar's lit tab) ---- */
+  const [navSection, setNavSection] = useState<'home' | 'leaders' | 'passes'>('home');
+  const navLockUntil = useRef(0);   // after a tap, the tapped tab stays lit while the page glides there
+  const markNav = useCallback((s: 'home' | 'leaders' | 'passes') => {
+    navLockUntil.current = performance.now() + 1600;
+    setNavSection(s);
+  }, []);
+  useEffect(() => {
+    if (activeHero || subPage || gate !== 'gone') return;
+    // Two rect reads and a no-op setState when nothing changed, so it is cheap to run on every scroll event.
+    const update = () => {
+      if (performance.now() < navLockUntil.current) return;
+      const mid = window.innerHeight * 0.5;
+      const top = (id: string) => document.getElementById(id)?.getBoundingClientRect().top ?? Infinity;
+      setNavSection(top('passes') <= mid ? 'passes' : top('roster') <= mid ? 'leaders' : 'home');
+    };
+    window.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update);
+    // Re-check just after a tap's lock ends, since the glide's last scroll event may fall inside it.
+    const settle = window.setInterval(update, 700);
+    update();
+    return () => {
+      window.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+      clearInterval(settle);
+    };
+  }, [activeHero, subPage, gate]);
+
   /* ---- navigation ---- */
   const goHero = useCallback((key: string) => {
     if (!visitedRef.current.has(key)) {
@@ -5234,6 +5627,7 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
   const goHome = useCallback(() => {
+    markNav('home');
     setActiveHero(null);
     leaveSubPage();
     setMobileMenuOpen(false);
@@ -5271,6 +5665,7 @@ export default function App() {
   const goMyPass = useCallback(() => goSubPage('mypass'), [goSubPage]);
   // The passes section lives on the home page, so leave any hero page first.
   const goPasses = useCallback(() => {
+    markNav('passes');
     setActiveHero(null);
     leaveSubPage();
     setMobileMenuOpen(false);
@@ -5280,6 +5675,7 @@ export default function App() {
 
   // Leaders list sits on the home page too, so leave any hero page first (phone action bar).
   const goRoster = useCallback(() => {
+    markNav('leaders');
     setActiveHero(null);
     leaveSubPage();
     setMobileMenuOpen(false);
@@ -5452,9 +5848,30 @@ export default function App() {
     setIsRegisterOpen(true);
   };
 
+  const submittingRef = useRef(false);
   const handleRegisterSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!profile) return;
+    if ((pass.id === 'oneday' || pass.id === 'twoday') && !formData.events.length) {
+      window.alert('Pick the events you will attend. They must be booked before the fest.');
+      return;
+    }
+    if (BACKEND_ENABLED) {
+      // The server re-checks every teammate, the team size, the event limits, the one-team-per-person rule and works out the price.
+      if (submittingRef.current) return;
+      submittingRef.current = true;
+      submitRegistration({
+        pass: pass.id,
+        day: pass.pickDay ? formData.day : null,
+        teamName: pass.team ? formData.teamName.trim() : null,
+        members: pass.team ? teamMembers.map((m) => ({ id: m.id.trim().toUpperCase(), name: normalizeName(m.name) })) : [],
+        events: pass.id === 'oneday' || pass.id === 'twoday' ? formData.events : []
+      }).then(
+        () => setRegisterSuccess(true),
+        (err) => window.alert(backendError(err))
+      ).finally(() => { submittingRef.current = false; });
+      return;
+    }
     if (pass.team) {
       const bad = memberChecks.findIndex((c) => c !== 'ok');
       if (bad !== -1) {
@@ -5524,56 +5941,11 @@ export default function App() {
     let lastY = window.scrollY;
     let prev: { key: string; from: number; exit: number } | null = null;   // leader on stage last update
 
-    // Scroll stop: when the user's own downward scrolling reaches a leader's card (its row pins), the page
-    // holds there until that robot has finished arriving — the full drive-in + transform the first time,
-    // otherwise just its walk to its mark. However fast you scroll, every robot stands before it leaves.
-    // Scrolling up is never held, and only wheel / touch / keyboard scrolling counts, so the TOP and HOME
-    // buttons, nav links and anything else that scrolls the page go straight through.
-    let lock: { y: number; key: string; t0: number; max: number } | null = null;
-    let lastInput = 0;
-    let lastStop: { key: string; y: number } | null = null;   // a stop never catches twice until you have moved well away
-    const SCROLL_KEYS = new Set(['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', ' ', 'End', 'Home']);
-    const onInput = (e: Event) => {
-      lastInput = performance.now();
-      if (lock && e.cancelable) e.preventDefault();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (!SCROLL_KEYS.has(e.key) || (e.target as HTMLElement)?.closest?.('input, textarea, select, [contenteditable]')) return;
-      onInput(e);
-    };
-    const holdTo = (y: number) => window.scrollTo({ top: y, behavior: 'instant' as ScrollBehavior });
-    const watchLock = () => {
-      if (!lock) return;
-      const now = performance.now();
-      if ((st.settled && st.key === lock.key && now - lock.t0 > 120) || now - lock.t0 > lock.max) { lock = null; return; }
-      if (Math.abs(window.scrollY - lock.y) > 1) holdTo(lock.y);
-      requestAnimationFrame(watchLock);
-    };
-
+    // Scrolling is never held: the page always follows the user's own scroll. A robot that has not finished
+    // arriving simply keeps walking in while the page moves on, and one that is passed walks off the edge.
     const update = () => {
       raf = 0;
       const down = window.scrollY >= lastY;
-      if (lock) {
-        if (Math.abs(window.scrollY - lock.y) > 1) holdTo(lock.y);
-      } else if (down && !reduce && sceneReadyRef.current && window.innerWidth >= 1024 && performance.now() - lastInput < 500) {
-        // The first stop this scroll step crossed (a fast flick can cross several in one frame).
-        const y = window.scrollY, vh = window.innerHeight;
-        let stop: { y: number; key: string } | null = null;
-        document.querySelectorAll<HTMLElement>('[data-stage-row]').forEach((row) => {
-          const top = row.getBoundingClientRect().top + y;   // the card pins here
-          if (lastY < top - 2 && top <= y + 2 && (!stop || top < stop.y)) stop = { y: top, key: row.dataset.stageRow! };
-        });
-        if (stop && lastStop && Math.abs((stop as { y: number }).y - lastStop.y) < 4) stop = null;
-        if (lastStop && Math.abs(y - lastStop.y) > vh) lastStop = null;
-        if (stop) {
-          const { y: sy, key } = stop as { y: number; key: string };
-          lock = { y: sy, key, t0: performance.now(), max: stagedOnce.current.has(key) ? 2500 : 6500 };
-          lastStop = { key, y: sy };
-          st.settled = false;
-          holdTo(sy);
-          requestAnimationFrame(watchLock);
-        }
-      }
       lastY = window.scrollY;
       // A fast scroll can skip a leader's walk-out entirely. Whoever loses the stage is told which
       // edge to keep walking to (exit going down, back where it came from going up), so robots
@@ -5628,17 +6000,10 @@ export default function App() {
     update();
     window.addEventListener('scroll', onScroll, { passive: true });
     window.addEventListener('resize', onScroll);
-    window.addEventListener('wheel', onInput, { passive: false });
-    window.addEventListener('touchmove', onInput, { passive: false });
-    window.addEventListener('keydown', onKey);
     return () => {
       cancelAnimationFrame(raf);
-      lock = null;
       window.removeEventListener('scroll', onScroll);
       window.removeEventListener('resize', onScroll);
-      window.removeEventListener('wheel', onInput);
-      window.removeEventListener('touchmove', onInput);
-      window.removeEventListener('keydown', onKey);
       st.key = null;
     };
   }, [activeHero, subPage, gate, homePhase]);   // re-evaluate when the home page switches (hero ⇄ explored)
@@ -5875,9 +6240,20 @@ export default function App() {
               title={profile ? `My pass · ${profile.id}` : 'Get your Optimus ID'}
               className={`hidden md:inline-flex items-center gap-2 px-3 2xl:px-4 py-2.5 rounded-xl border ${t.text} ${t.ring} ${subPage === 'mypass' ? t.glow : 'hover:bg-white/5'} bg-slate-950/40 transition-colors text-xs font-black tracking-widest font-mono`}
             >
-              <QrCode className="w-4 h-4" /> <span className="hidden 2xl:inline">{profile ? profile.id : 'GET OPTIMUS ID'}</span>
+              <QrCode className="w-4 h-4" /> <span className="hidden lg:inline">{profile ? `MY PASS · ${profile.id}` : 'GET OPTIMUS ID'}</span>
+              {profile && <span className="w-2 h-2 rounded-full bg-emerald-400" aria-label="Signed in" />}
             </button>
           </div>
+
+          {/* Phones: the same entry point, next to the menu button. Green dot = signed in. */}
+          <button
+            onClick={goMyPass}
+            aria-label={profile ? `My pass, ${profile.id}` : 'Get your Optimus ID'}
+            className={`sm:hidden relative ml-auto mr-2 p-2 border ${subPage === 'mypass' ? t.ring : 'border-slate-700'} bg-slate-950/40 ${t.text}`}
+          >
+            <QrCode className="w-6 h-6" />
+            {profile && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-400 border border-slate-950" />}
+          </button>
 
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -5907,9 +6283,9 @@ export default function App() {
       <main className="relative z-10 pt-20">
 
         {subPage === 'certificate' ? (
-          <CertificatePage onHome={goHome} />
+          <CertificatePage onHome={goHome} profile={profile} onMyPass={goMyPass} />
         ) : subPage === 'mypass' ? (
-          <MyPassPage profile={profile} onProfile={setProfile} onHome={goHome} />
+          <MyPassPage profile={profile} onProfile={setProfile} onHome={goHome} authUser={authUser} authReady={authReady} />
         ) : !active ? (
           /* ======================= HOME ======================= */
           <>
@@ -6419,7 +6795,7 @@ export default function App() {
                             key={p.id}
                             type="button"
                             aria-pressed={on}
-                            onClick={() => setFormData({ ...formData, pass: p.id })}
+                            onClick={() => setFormData({ ...formData, pass: p.id, events: [] })}
                             className={`text-left px-3 py-2.5 rounded-xl border transition-colors ${on ? `${ptk.ring} bg-slate-950` : 'border-slate-800 bg-slate-950/80 hover:border-slate-600'}`}
                           >
                             <span className={`block text-[10px] font-mono font-bold tracking-widest ${on ? ptk.text : 'text-slate-400'}`}>{p.name}</span>
@@ -6442,7 +6818,7 @@ export default function App() {
                             key={d}
                             type="button"
                             aria-pressed={formData.day === i}
-                            onClick={() => setFormData({ ...formData, day: i })}
+                            onClick={() => setFormData({ ...formData, day: i, events: formData.events.filter((id) => EVENT_SCHEDULE[id]?.day === i) })}
                             className={`px-4 py-3 rounded-xl border text-xs font-mono font-bold tracking-widest transition-colors ${formData.day === i ? `${pt.ring} ${pt.text} bg-slate-950` : 'border-slate-800 bg-slate-950/80 text-slate-400 hover:border-slate-600'}`}
                           >
                             DAY {i + 1} · {d}
@@ -6450,6 +6826,22 @@ export default function App() {
                         ))}
                       </div>
                     </div>
+                  )}
+
+                  {(pass.id === 'oneday' || pass.id === 'twoday') && (
+                    <EventPicker
+                      pass={pass.id}
+                      day={formData.day}
+                      selected={formData.events}
+                      onChange={(events) => setFormData({ ...formData, events })}
+                      ring={pt.ring}
+                      text={pt.text}
+                    />
+                  )}
+                  {pass.id === 'exclusive' && (
+                    <p className="text-[11px] text-slate-400">
+                      All presentations, workshops and non-technical events are included on both days. Your QR will list them all.
+                    </p>
                   )}
 
                   {pass.team && (
@@ -6500,7 +6892,8 @@ export default function App() {
                       'bad-format': ['text-slate-500', 'ID FORMAT: OPT27-00000'],
                       'not-found': ['text-rose-400', 'NO SUCH OPTIMUS ID'],
                       'name-mismatch': ['text-rose-400', 'NAME DOES NOT MATCH THIS ID'],
-                      'duplicate': ['text-rose-400', 'ALREADY IN TEAM']
+                      'duplicate': ['text-rose-400', 'ALREADY IN TEAM'],
+                      'busy': ['text-rose-400', 'ALREADY IN ANOTHER TEAM FOR THIS EVENT']
                     };
                     const setMember = (patch: Partial<{ id: string; name: string }>) => {
                       const members = [...formData.members];
@@ -6576,6 +6969,9 @@ export default function App() {
                       <div className="flex justify-between gap-3"><span className="text-slate-500">MEMBERS:</span><span className="text-slate-300 text-right">{teamMembers.map((m) => `${normalizeName(m.name)} · ${m.id}`).join(', ')}</span></div>
                     )}
                     <div className="flex justify-between gap-3"><span className="text-slate-500">COLLEGE:</span><span className="text-slate-300 text-right">{profile?.college}</span></div>
+                    {(pass.id === 'oneday' || pass.id === 'twoday') && (
+                      <div className="flex justify-between gap-3"><span className="text-slate-500">EVENTS:</span><span className="text-slate-300 text-right">{formData.events.map(eventTitle).join(', ')}</span></div>
+                    )}
                     <div className="flex justify-between gap-3"><span className="text-slate-500">VALID:</span><span className={`${pt.text} text-right`}>{passValid}</span></div>
                     <div className="flex justify-between gap-3"><span className="text-slate-500">AMOUNT:</span><span className="text-white font-bold text-right">{inr(passTotal)}</span></div>
                   </div>
@@ -6588,7 +6984,9 @@ export default function App() {
                   </div>
                 </div>
                 <p className="text-[11px] text-slate-500 font-mono">
-                  Demo confirmation only — connect a payment gateway and a backend / Google Form to collect fees and store real registrations.
+                  {BACKEND_ENABLED
+                    ? 'Registered. Open MY PASS on the day: its QR is scanned at the gate and at each of your events. Payment is collected separately.'
+                    : 'Demo confirmation only — connect the backend to store real registrations.'}
                 </p>
                 <button
                   onClick={() => { setIsRegisterOpen(false); setRegisterSuccess(false); }}
@@ -6739,16 +7137,21 @@ export default function App() {
           style={{ paddingBottom: 'max(0.375rem, env(safe-area-inset-bottom))' }}
         >
           {([
-            { label: 'HOME', icon: <Home className="w-5 h-5" />, on: goHome, current: !active && !subPage },
-            { label: 'LEADERS', icon: <Users className="w-5 h-5" />, on: goRoster, current: !!active },
-            { label: 'PASSES', icon: <Ticket className="w-5 h-5" />, on: goPasses, current: false }
+            { label: 'HOME', icon: <Home className="w-5 h-5" />, on: goHome, current: !active && !subPage && navSection === 'home', tone: 'text-amber-400' },
+            { label: 'LEADERS', icon: <Users className="w-5 h-5" />, on: goRoster, current: !!active || (!subPage && navSection === 'leaders'), tone: active ? t.text : 'text-cyan-400' },
+            { label: 'PASSES', icon: <Ticket className="w-5 h-5" />, on: goPasses, current: !active && !subPage && navSection === 'passes', tone: 'text-fuchsia-400' }
           ] as const).map((b) => (
             <button
               key={b.label}
               onClick={b.on}
               aria-current={b.current ? 'page' : undefined}
-              className={`flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-[9px] font-mono font-bold tracking-widest active:scale-95 ${b.current ? t.text : 'text-slate-400'}`}
+              className={`relative flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-[9px] font-mono font-bold tracking-widest active:scale-95 transition-colors duration-300 ${b.current ? b.tone : 'text-slate-400'}`}
             >
+              {/* the "light": a glowing bar over the tab you are on, in that tab's colour */}
+              <span
+                aria-hidden="true"
+                className={`absolute -top-1.5 inset-x-3 h-0.5 rounded-full bg-current shadow-[0_0_10px_currentColor] transition-opacity duration-300 ${b.current ? 'opacity-100' : 'opacity-0'}`}
+              />
               {b.icon}
               {b.label}
             </button>

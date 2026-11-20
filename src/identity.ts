@@ -68,7 +68,8 @@ export const signOutProfile = () => write(KEYS.current, null);
 export const qrPayload = (p: Profile) => `OPTIMUS27|${p.id}`;
 
 /* ---- teammate check ---- */
-export type MemberCheck = 'ok' | 'bad-format' | 'not-found' | 'name-mismatch' | 'duplicate';
+// 'busy' = already in another team for this event (only the server can know that).
+export type MemberCheck = 'ok' | 'bad-format' | 'not-found' | 'name-mismatch' | 'duplicate' | 'busy';
 export const checkMember = (id: string, name: string, others: string[]): MemberCheck => {
   if (!isOptimusId(id)) return 'bad-format';
   if (others.includes(id)) return 'duplicate';

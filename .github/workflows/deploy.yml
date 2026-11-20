@@ -26,9 +26,11 @@ jobs:
       - run: npm ci
       - run: npm run build
         env:
-          # Optional: set as a repository variable (Settings > Secrets and variables > Actions > Variables)
-          # to enable the /#admin login. It is a SHA-256 hash and ends up in the public bundle.
-          VITE_ADMIN_PASSWORD_SHA256: ${{ vars.VITE_ADMIN_PASSWORD_SHA256 }}
+          # Supabase project URL and anon key. Set them as repository *variables* (Settings > Secrets and
+          # variables > Actions > Variables). They are public identifiers, not secrets: the data is protected
+          # by row-level security (supabase/schema.sql). Leave them unset and the site runs in demo mode.
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

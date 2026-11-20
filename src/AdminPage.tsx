@@ -2,11 +2,14 @@ import React, { useState, useEffect } from 'react';
 import {
   Shield, LogOut, Users, Calendar, Megaphone, Download, Trash2, Search, RotateCcw, Save, Eye, UserCheck
 } from 'lucide-react';
+import { Registration, Announcement, Overrides, VisitStats, getVisitStats } from './adminData';
 import {
-  Registration, Announcement, Overrides, VisitStats, getVisitStats, adminConfigured, signIn, isSignedIn, signOut,
-  listRegistrations, deleteRegistration, listOverrides, saveOverride, deleteOverride,
-  listAnnouncements, addAnnouncement, setAnnouncementActive, deleteAnnouncement
-} from './adminData';
+  BACKEND_ENABLED, AuthUser, watchUser, signInWithGoogle, signOutUser, isAdminEmail, backendError,
+  adminListRegistrations, adminListProfiles, adminListAttendance, adminDeleteRegistration,
+  AttendanceRow, remoteOverrides, remoteSaveOverride, remoteDeleteOverride,
+  remoteAnnouncements, remoteAddAnnouncement, remoteSetAnnouncementActive, remoteDeleteAnnouncement
+} from './backend';
+import { downloadWorkbook } from './exportExcel';
 import { HEROES, PASSES, THEME, FEST_DAYS, EDITABLE_EVENT_FIELDS, inr, EventItem, PassId } from './App';
 
 /* ------------------------------------------------------------------ *
@@ -26,11 +29,20 @@ function Shell({ children, onSignOut }: { children: React.ReactNode; onSignOut?:
             <Shield className="w-5 h-5 text-amber-400" />
             <span className="font-black tracking-[0.2em] text-sm">OPTIMUS '27 <span className="text-amber-400">ADMIN</span></span>
           </div>
-          {onSignOut && (
-            <button onClick={onSignOut} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 text-slate-300 hover:text-white text-xs font-mono">
-              <LogOut className="w-3.5 h-3.5" /> SIGN OUT
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            <a
+              href={import.meta.env.BASE_URL}
+              onClick={(e) => { e.preventDefault(); history.replaceState(null, '', import.meta.env.BASE_URL); window.location.reload(); }}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-700 text-slate-300 hover:text-white text-xs font-mono"
+            >
+              ← SITE
+            </a>
+            {onSignOut && (
+              <button onClick={onSignOut} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 text-slate-300 hover:text-white text-xs font-mono">
+                <LogOut className="w-3.5 h-3.5" /> SIGN OUT
+              </button>
+            )}
+          </div>
         </div>
       </header>
       <main className="max-w-7xl mx-auto px-4 py-8">{children}</main>
@@ -39,34 +51,27 @@ function Shell({ children, onSignOut }: { children: React.ReactNode; onSignOut?:
 }
 
 /* ============================== LOGIN ============================= */
-function Login({ onSignedIn }: { onSignedIn: () => void }) {
-  const [password, setPassword] = useState('');
+// There is no password anywhere in this site. Admins sign in with their Google account; whether that
+// account may see anything is decided by the server (row-level security in supabase/schema.sql).
+function Login() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const go = () => {
     setBusy(true);
     setError('');
-    const ok = await signIn(password);
-    setBusy(false);
-    if (ok) onSignedIn();
-    else setError(crypto.subtle ? 'Wrong password.' : 'Open the admin page over localhost or https to sign in.');
+    signInWithGoogle().catch((e) => setError(backendError(e))).finally(() => setBusy(false));
   };
   return (
-    <form onSubmit={submit} className="max-w-sm mx-auto mt-16 p-6 rounded-2xl bg-slate-900 border border-amber-500/50 shadow-[0_0_45px_rgba(250,204,21,0.15)] space-y-4">
+    <div className="max-w-sm mx-auto mt-16 p-6 rounded-2xl bg-slate-900 border border-amber-500/50 shadow-[0_0_45px_rgba(250,204,21,0.15)] space-y-4">
       <div className="space-y-1">
         <h1 className="text-xl font-black tracking-wide uppercase">Admin sign in</h1>
         <p className="text-xs text-slate-400">Restricted to OPTIMUS '27 organisers.</p>
       </div>
-      <div>
-        <label className={label}>PASSWORD</label>
-        <input type="password" required autoFocus autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} className={input} />
-      </div>
       {error && <p role="alert" className="text-xs text-rose-400 font-mono">{error}</p>}
-      <button type="submit" disabled={busy} className="w-full py-3 rounded-xl bg-amber-400 text-black text-xs font-black tracking-widest disabled:opacity-60">
-        {busy ? 'CHECKING…' : 'SIGN IN'}
+      <button onClick={go} disabled={busy} className="w-full py-3 rounded-xl bg-white text-slate-900 text-xs font-black tracking-widest disabled:opacity-60 flex items-center justify-center gap-2">
+        <span className="text-base leading-none">G</span> {busy ? 'OPENING GOOGLE…' : 'SIGN IN WITH GOOGLE'}
       </button>
-    </form>
+    </div>
   );
 }
 
@@ -107,17 +112,41 @@ function VisitorStats() {
 }
 
 /* ========================== REGISTRATIONS ========================= */
-const csvCell = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+// A leading = + - @ would run as a formula when the CSV is opened in Excel, so such cells get a ' in front.
+const csvCell = (v: unknown) => {
+  const s = String(v ?? '');
+  return `"${(/^[=+\-@\t\r]/.test(s) ? "'" + s : s).replace(/"/g, '""')}"`;
+};
 
 function RegistrationsTab() {
-  const [rows, setRows] = useState<Registration[]>(listRegistrations);
+  const [rows, setRows] = useState<Registration[]>([]);
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [exporting, setExporting] = useState(false);
   const [query, setQuery] = useState('');
   const [passFilter, setPassFilter] = useState<'all' | PassId>('all');
 
+  const load = () => {
+    setStatus('loading');
+    adminListRegistrations().then((r) => { setRows(r); setStatus('ready'); }, () => setStatus('error'));
+  };
+  useEffect(load, []);
+
   const remove = (r: Registration) => {
     if (!confirm(`Delete the registration for ${r.leader_name}? This cannot be undone.`)) return;
-    deleteRegistration(r.id);
-    setRows(listRegistrations());
+    adminDeleteRegistration(r.id).then(load, (e) => alert(backendError(e)));
+  };
+
+  // One workbook with everything: a Participants sheet and a sheet per pass (same columns as the Google Sheet).
+  const exportExcel = async () => {
+    setExporting(true);
+    try {
+      const [profiles, attendance] = await Promise.all([adminListProfiles(), adminListAttendance()]);
+      await downloadWorkbook(rows, profiles, attendance);
+    } catch (e) {
+      alert(backendError(e));
+    } finally {
+      setExporting(false);
+    }
   };
 
   const q = query.trim().toLowerCase();
@@ -169,13 +198,18 @@ function RegistrationsTab() {
           <option value="all">All passes</option>
           {PASSES.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
-        <button onClick={() => setRows(listRegistrations())} className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-slate-800 text-slate-300 hover:text-white text-xs font-mono">
+        <button onClick={load} className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-slate-800 text-slate-300 hover:text-white text-xs font-mono">
           <RotateCcw className="w-3.5 h-3.5" /> REFRESH
         </button>
-        <button onClick={exportCsv} disabled={!shown.length} className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-amber-400 text-black text-xs font-black tracking-widest disabled:opacity-50">
+        <button onClick={exportCsv} disabled={!shown.length} className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-slate-800 text-slate-200 hover:text-white text-xs font-mono font-bold tracking-widest disabled:opacity-50">
           <Download className="w-3.5 h-3.5" /> CSV
         </button>
+        <button onClick={exportExcel} disabled={status !== 'ready' || exporting} className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-amber-400 text-black text-xs font-black tracking-widest disabled:opacity-50">
+          <Download className="w-3.5 h-3.5" /> {exporting ? 'PREPARING…' : 'EXCEL'}
+        </button>
       </div>
+      {status === 'error' && <p role="alert" className="text-xs font-mono text-rose-400">Could not load registrations. Check your connection and that this Google account is an admin.</p>}
+      {status === 'loading' && <p className="text-xs font-mono text-slate-500">Loading registrations…</p>}
 
       <div className="overflow-x-auto rounded-xl border border-slate-800">
         <table className="w-full text-sm">
@@ -231,23 +265,27 @@ function EventEditor({ ev, override, onSaved }: { ev: EventItem; override?: Reco
   const [msg, setMsg] = useState('');
   const set = (k: keyof EventDraft, v: string | boolean) => setDraft((d) => ({ ...d, [k]: v }));
 
-  const save = () => {
+  const save = async () => {
     const data: Record<string, unknown> = { ...draft, rules: draft.rules.split('\n').map((s) => s.trim()).filter(Boolean) };
     // Store only the fields that differ from the built-in data, so later code changes still show through.
     for (const f of EDITABLE_EVENT_FIELDS) {
       if (JSON.stringify(data[f]) === JSON.stringify(f === 'placeholder' ? !!ev.placeholder : ev[f])) delete data[f];
     }
-    if (Object.keys(data).length) saveOverride(ev.id, data);
-    else deleteOverride(ev.id);
-    setMsg('Saved');
-    onSaved();
+    try {
+      if (Object.keys(data).length) await remoteSaveOverride(ev.id, data);
+      else await remoteDeleteOverride(ev.id);
+      setMsg('Saved');
+      onSaved();
+    } catch { setMsg('Could not save'); }
   };
-  const reset = () => {
+  const reset = async () => {
     if (!confirm(`Reset "${ev.title}" to the built-in details?`)) return;
-    deleteOverride(ev.id);
-    setDraft(toDraft(ev));
-    setMsg('Reset');
-    onSaved();
+    try {
+      await remoteDeleteOverride(ev.id);
+      setDraft(toDraft(ev));
+      setMsg('Reset');
+      onSaved();
+    } catch { setMsg('Could not reset'); }
   };
 
   return (
@@ -287,14 +325,16 @@ function PrizePoolEditor({ heroKey, base, override, onSaved }: { heroKey: string
   const current = typeof override?.prizePool === 'number' ? override.prizePool : base;
   const [value, setValue] = useState(current == null ? '' : String(current));
   const [msg, setMsg] = useState('');
-  const save = () => {
+  const save = async () => {
     const n = Number(value);
     if (value.trim() === '' || !Number.isFinite(n) || n < 0) { setMsg('Enter a number'); return; }
     const id = `hero:${heroKey}`;
-    if (n === base) deleteOverride(id);
-    else saveOverride(id, { prizePool: n });
-    setMsg('Saved');
-    onSaved();
+    try {
+      if (n === base) await remoteDeleteOverride(id);
+      else await remoteSaveOverride(id, { prizePool: n });
+      setMsg('Saved');
+      onSaved();
+    } catch { setMsg('Could not save'); }
   };
   return (
     <div className="flex items-end gap-2">
@@ -309,12 +349,16 @@ function PrizePoolEditor({ heroKey, base, override, onSaved }: { heroKey: string
 }
 
 function EventsTab() {
-  const [overrides, setOverrides] = useState<Overrides>(listOverrides);
-  const reload = () => setOverrides(listOverrides());
+  const [overrides, setOverrides] = useState<Overrides | null>(null);
+  const [failed, setFailed] = useState(false);
+  const reload = () => remoteOverrides().then((o) => { setOverrides(o); setFailed(false); }, () => setFailed(true));
+  useEffect(() => { reload(); }, []);
+  if (failed) return <p role="alert" className="text-xs font-mono text-rose-400">Could not load the event edits. Check your connection and that this Google account is an admin.</p>;
+  if (!overrides) return <p className="text-xs font-mono text-slate-500">Loading events…</p>;
 
   return (
     <div className="space-y-8">
-      <p className="text-xs text-slate-400">Changes show on the public site the next time it is loaded in this browser.</p>
+      <p className="text-xs text-slate-400">Changes are saved for everyone and show on the public site the next time it is loaded.</p>
       {HEROES.map((h) => {
         const ht = THEME[h.theme];
         return (
@@ -338,20 +382,18 @@ function EventsTab() {
 
 /* =========================== ANNOUNCEMENTS ======================== */
 function AnnouncementsTab() {
-  const [rows, setRows] = useState<Announcement[]>(listAnnouncements);
+  const [rows, setRows] = useState<Announcement[]>([]);
   const [message, setMessage] = useState('');
-  const reload = () => setRows(listAnnouncements());
+  const reload = () => remoteAnnouncements().then(setRows, () => {});
+  useEffect(() => { reload(); }, []);
 
   const post = (e: React.FormEvent) => {
     e.preventDefault();
-    addAnnouncement(message.trim());
-    setMessage('');
-    reload();
+    remoteAddAnnouncement(message.trim()).then(() => { setMessage(''); reload(); }, () => alert('Could not post the announcement.'));
   };
   const remove = (a: Announcement) => {
     if (!confirm('Delete this announcement?')) return;
-    deleteAnnouncement(a.id);
-    reload();
+    remoteDeleteAnnouncement(a.id).then(reload, () => alert('Could not delete the announcement.'));
   };
 
   return (
@@ -373,7 +415,7 @@ function AnnouncementsTab() {
               <p className="text-sm text-slate-200">{a.message}</p>
               <p className="text-[10px] font-mono text-slate-500">{new Date(a.created_at).toLocaleString('en-IN')} · {a.active ? 'LIVE' : 'HIDDEN'}</p>
             </div>
-            <button onClick={() => { setAnnouncementActive(a.id, !a.active); reload(); }} className="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 hover:text-white text-[10px] font-mono tracking-widest">
+            <button onClick={() => remoteSetAnnouncementActive(a.id, !a.active).then(reload, () => alert('Could not update the announcement.'))} className="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 hover:text-white text-[10px] font-mono tracking-widest">
               {a.active ? 'HIDE' : 'SHOW'}
             </button>
             <button onClick={() => remove(a)} aria-label="Delete announcement" className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-slate-800">
@@ -388,35 +430,143 @@ function AnnouncementsTab() {
 }
 
 /* ============================== PAGE ============================== */
+/* ============================ ATTENDANCE =========================== */
+// Live view of what the scanners recorded: gate entry per day, and who attended each event.
+const eventName = (id: string | null) => HEROES.flatMap((h) => h.events).find((e) => e.id === id)?.title ?? id ?? '';
+const time = (iso: string) => new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+
+function AttendanceTab() {
+  const [rows, setRows] = useState<AttendanceRow[]>([]);
+  const [regs, setRegs] = useState<Registration[]>([]);
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [view, setView] = useState<'entry' | string>('entry');   // 'entry' or an event id
+  const [query, setQuery] = useState('');
+
+  const load = () => {
+    setStatus('loading');
+    Promise.all([adminListAttendance(), adminListRegistrations()]).then(([a, r]) => { setRows(a); setRegs(r); setStatus('ready'); }, () => setStatus('error'));
+  };
+  useEffect(load, []);
+  useEffect(() => { const t = setInterval(load, 30000); return () => clearInterval(t); }, []);
+
+  const entry = rows.filter((r) => r.kind === 'entry');
+  const eventRows = rows.filter((r) => r.kind === 'event');
+  const allEvents = HEROES.flatMap((h) => h.events);
+  const q = query.trim().toLowerCase();
+  const shown = (view === 'entry' ? entry : eventRows.filter((r) => r.eventId === view))
+    .filter((r) => !q || [r.name, r.optimusId, r.college].some((v) => v.toLowerCase().includes(q)));
+
+  const stat = (title: string, value: number, note: string, tone = 'text-cyan-400') => (
+    <div className="p-4 rounded-xl bg-slate-900 border border-slate-800">
+      <div className={label}>{title}</div>
+      <div className={`text-2xl font-black ${tone}`}>{value}</div>
+      <div className="text-[11px] text-slate-500">{note}</div>
+    </div>
+  );
+  const chip = (on: boolean) => `px-3 py-2 rounded-lg border text-[11px] font-mono font-bold tracking-widest whitespace-nowrap ${on ? 'border-amber-500/50 text-amber-400 bg-slate-900' : 'border-slate-800 text-slate-400 hover:text-white'}`;
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {stat('REGISTRATIONS', regs.length, 'passes registered')}
+        {stat('AT THE GATE · DAY 1', entry.filter((r) => r.day === 0).length, FEST_DAYS[0], 'text-emerald-400')}
+        {stat('AT THE GATE · DAY 2', entry.filter((r) => r.day === 1).length, FEST_DAYS[1], 'text-emerald-400')}
+        {stat('EVENT SCANS', eventRows.length, 'across all events', 'text-amber-400')}
+      </div>
+
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        <button onClick={() => setView('entry')} aria-pressed={view === 'entry'} className={chip(view === 'entry')}>GATE ENTRY · {entry.length}</button>
+        {allEvents.map((e) => (
+          <button key={e.id} onClick={() => setView(e.id)} aria-pressed={view === e.id} className={chip(view === e.id)}>
+            {e.title} · {eventRows.filter((r) => r.eventId === e.id).length}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name, Optimus ID, college" className={`${input} pl-9`} />
+        </div>
+        <button onClick={load} className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-slate-800 text-slate-300 hover:text-white text-xs font-mono"><RotateCcw className="w-3.5 h-3.5" /> REFRESH</button>
+      </div>
+
+      {status === 'error' && <p role="alert" className="text-xs font-mono text-rose-400">Could not load attendance. Check your connection and that this Google account is an admin.</p>}
+      {status === 'loading' && !rows.length && <p className="text-xs font-mono text-slate-500">Loading…</p>}
+
+      <div className="rounded-2xl bg-slate-900 border border-slate-800 overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left border-b border-slate-800">
+              {['OPTIMUS ID', 'NAME', 'COLLEGE', 'DAY', 'SCANNED AT', 'BY'].map((h) => <th key={h} className={`${label} px-4 py-3 mb-0`}>{h}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {shown.map((r, i) => (
+              <tr key={i} className="border-b border-slate-800/70 last:border-0">
+                <td className="px-4 py-2.5 font-mono text-amber-300 whitespace-nowrap">{r.optimusId}</td>
+                <td className="px-4 py-2.5 font-bold text-slate-100">{r.name}</td>
+                <td className="px-4 py-2.5 text-slate-400">{r.college}</td>
+                <td className="px-4 py-2.5 text-slate-300 whitespace-nowrap">{FEST_DAYS[r.day]}</td>
+                <td className="px-4 py-2.5 text-slate-300 whitespace-nowrap">{time(r.at)}{r.manual && <span className="ml-2 text-[10px] font-mono text-amber-400">MANUAL</span>}</td>
+                <td className="px-4 py-2.5 text-slate-500 truncate max-w-[12rem]">{r.by}</td>
+              </tr>
+            ))}
+            {!shown.length && status !== 'loading' && (
+              <tr><td colSpan={6} className="px-4 py-8 text-center text-xs font-mono text-slate-500">
+                No {view === 'entry' ? 'gate check-ins' : `scans for ${eventName(view)}`} yet.
+              </td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 const TABS = [
   { id: 'registrations', label: 'REGISTRATIONS', icon: Users },
+  { id: 'attendance', label: 'ATTENDANCE', icon: UserCheck },
   { id: 'events', label: 'EVENTS', icon: Calendar },
   { id: 'announcements', label: 'ANNOUNCEMENTS', icon: Megaphone }
 ] as const;
 
 export default function AdminPage() {
-  const [signedIn, setSignedIn] = useState(isSignedIn);
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [ready, setReady] = useState(!BACKEND_ENABLED);
   const [tab, setTab] = useState<(typeof TABS)[number]['id']>('registrations');
 
   useEffect(() => {
     document.title = "Admin · OPTIMUS '27";
     document.getElementById('splash')?.remove();
   }, []);
+  useEffect(() => watchUser((u) => { setUser(u); setReady(true); }), []);
 
-  if (!adminConfigured) {
+  if (!BACKEND_ENABLED) {
     return (
       <Shell>
         <div className="max-w-md mx-auto mt-16 p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-3 text-sm text-slate-400">
           <h1 className="text-lg font-black tracking-wide uppercase text-slate-100">Admin not configured</h1>
-          <p>Set <code className="text-amber-400">VITE_ADMIN_PASSWORD_SHA256</code> in <code className="text-amber-400">.env.local</code> and restart the dev server.</p>
+          <p>The admin panel needs the Supabase backend. Add the <code className="text-amber-400">VITE_SUPABASE_*</code> values (see <code className="text-amber-400">README-SUPABASE.md</code>) and rebuild.</p>
         </div>
       </Shell>
     );
   }
-  if (!signedIn) return <Shell><Login onSignedIn={() => setSignedIn(true)} /></Shell>;
+  if (!ready) return <Shell><p className="text-center mt-16 text-sm font-mono text-slate-500">Checking sign-in…</p></Shell>;
+  if (!user) return <Shell><Login /></Shell>;
+  if (!isAdminEmail(user.email)) {
+    return (
+      <Shell onSignOut={() => signOutUser()}>
+        <div className="max-w-md mx-auto mt-16 p-6 rounded-2xl bg-slate-900 border border-rose-500/40 space-y-2 text-sm text-slate-300">
+          <h1 className="text-lg font-black tracking-wide uppercase text-slate-100">Not an admin account</h1>
+          <p><span className="font-mono">{user.email}</span> is not on the organisers' list. Sign out and use an admin Google account.</p>
+        </div>
+      </Shell>
+    );
+  }
 
   return (
-    <Shell onSignOut={() => { signOut(); setSignedIn(false); }}>
+    <Shell onSignOut={() => signOutUser()}>
       <VisitorStats />
       <nav className="flex gap-2 mb-6 overflow-x-auto">
         {TABS.map(({ id, label: l, icon: Icon }) => (
@@ -431,6 +581,7 @@ export default function AdminPage() {
         ))}
       </nav>
       {tab === 'registrations' && <RegistrationsTab />}
+      {tab === 'attendance' && <AttendanceTab />}
       {tab === 'events' && <EventsTab />}
       {tab === 'announcements' && <AnnouncementsTab />}
     </Shell>

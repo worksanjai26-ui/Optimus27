@@ -1,7 +1,7 @@
 node_modules/
 dist/
 
-# Local secrets (admin password hash)
+# Local config
 .env.local
 .env.*.local
 

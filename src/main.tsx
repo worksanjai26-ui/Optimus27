@@ -1,16 +1,28 @@
 import React, { Suspense, lazy } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
+import { restoreReturnHash } from './supabase';
 import './index.css';
 
-// The admin panel is not linked from the site; open /admin (or /#admin on hosts without SPA rewrites).
+// The app loaded, so the start page's one-time self-heal reload (index.html) can be used again next time.
+try { sessionStorage.removeItem('optimus27.healed'); } catch { /* storage blocked */ }
+
+// Google sends people back to the site root; put the page they signed in from (#mypass, #admin, #scan) back.
+restoreReturnHash();
+
+// The admin panel and the scanner are not linked from the site; open /admin or /scan (or /#admin and /#scan on
+// hosts without SPA rewrites, which is the reliable URL on GitHub Pages, served under a sub-path).
 const AdminPage = lazy(() => import('./AdminPage'));
-// GitHub Pages serves the site under a sub-path and has no SPA rewrites, so /#admin is the reliable URL there.
-const adminPath = import.meta.env.BASE_URL.replace(/\/+$/, '') + '/admin';
-const isAdmin = window.location.pathname.replace(/\/+$/, '') === adminPath || window.location.hash === '#admin';
+const ScanPage = lazy(() => import('./ScanPage'));
+const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
+const path = window.location.pathname.replace(/\/+$/, '');
+const isAdmin = path === base + '/admin' || window.location.hash === '#admin';
+const isScan = path === base + '/scan' || window.location.hash === '#scan';
 
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    {isAdmin ? <Suspense fallback={null}><AdminPage /></Suspense> : <App />}
+    {isAdmin ? <Suspense fallback={null}><AdminPage /></Suspense>
+      : isScan ? <Suspense fallback={null}><ScanPage /></Suspense>
+      : <App />}
   </React.StrictMode>
 );
