@@ -1253,7 +1253,9 @@ const ThreeHeroBackground = ({
     scene.add(sky);
 
     /* ---------- lighting ---------- */
-    scene.add(new THREE.HemisphereLight(0x6f86b0, 0x0a0c12, 0.35));
+    // Low tier: the two off-stage spotlights and the front fill are left out (spot / point lights are the
+    // costliest per pixel); a brighter sky light makes up for them.
+    scene.add(new THREE.HemisphereLight(0x6f86b0, 0x0a0c12, lite ? 0.62 : 0.35));
     const key = new THREE.DirectionalLight(0xfff0dc, 1.5);
     key.position.set(8, 18, 12);
     key.castShadow = true;
@@ -1275,7 +1277,7 @@ const ThreeHeroBackground = ({
     scene.add(rimCool);
     const frontFill = new THREE.DirectionalLight(0x8aa4d6, 0.35);
     frontFill.position.set(0, 2, 16);
-    scene.add(frontFill);
+    if (!lite) scene.add(frontFill);
     const gateLight = new THREE.PointLight(DEFAULT_ACCENT, 28, 30, 2);
     gateLight.position.set(0, GROUND_Y + 4.5, -8);
     scene.add(gateLight);
@@ -1639,7 +1641,7 @@ const ThreeHeroBackground = ({
     ];
 
     /* ---------- off-stage key spots (no visible towers) ---------- */
-    [-1, 1].forEach((s) => {
+    if (!lite) [-1, 1].forEach((s) => {
       const spot = new THREE.SpotLight(s > 0 ? 0x9fd4ff : 0xffc27a, 200, 50, 0.32, 0.7, 1.5);
       spot.position.set(s * 24, GROUND_Y + 13.6, -9);
       spot.target.position.set(0, GROUND_Y + 1, 0);
@@ -2685,6 +2687,23 @@ const ThreeHeroBackground = ({
         head, ...foldJoints.map((j) => j.obj), ...actShoulders.map((a) => a.obj), ...actElbows.map((a) => a.obj),
         ...(actCannon ? [actCannon.obj] : [])
       ]);
+      // Low tier goes further: the painted surfaces (main colour + accent) share one material and the
+      // metal ones (steel, frame, chrome) another, each part's colour baked into its vertices — so a
+      // joint needs two or three draws instead of five or six.
+      const litePaint = lite ? new THREE.MeshStandardMaterial({
+        // (less metallic than the full-quality paint: with no environment map and fewer lights, strong
+        // metal reads as near-black, so the colour comes through diffuse light instead)
+        color: 0xffffff, vertexColors: true, map: dirtTex, metalness: Math.min(paintMetal, 0.35), roughness: 0.5, roughnessMap: grimeTex, opacity: 1
+      }) : null;
+      const liteMetal = lite ? new THREE.MeshStandardMaterial({
+        color: 0xffffff, vertexColors: true, map: dirtTex, metalness: 0.5, roughness: 0.6, roughnessMap: grimeTex, opacity: 1
+      }) : null;
+      const shared = new Map<THREE.Material, THREE.MeshStandardMaterial>();
+      if (litePaint && liteMetal) {
+        [paint, accent].forEach((m) => shared.set(m, litePaint));
+        [steel, frame, chrome].forEach((m) => shared.set(m, liteMetal));
+        materials.push(litePaint, liteMetal);
+      }
       const buckets = new Map<THREE.Object3D, Map<THREE.Material, THREE.Mesh[]>>();
       rig.traverse((o) => {
         const m = o as THREE.Mesh;
@@ -2693,18 +2712,27 @@ const ThreeHeroBackground = ({
         if (!g.attributes.position || !g.attributes.normal || !g.attributes.uv || g.morphAttributes.position) return;
         let byMat = buckets.get(m.parent);
         if (!byMat) buckets.set(m.parent, (byMat = new Map()));
-        const list = byMat.get(m.material as THREE.Material) ?? [];
+        const target = shared.get(m.material as THREE.Material) ?? (m.material as THREE.Material);
+        const list = byMat.get(target) ?? [];
         list.push(m);
-        byMat.set(m.material as THREE.Material, list);
+        byMat.set(target, list);
       });
       buckets.forEach((byMat, parent) => byMat.forEach((list, mat) => {
-        if (list.length < 2) return;
+        const baked = !!(mat as THREE.MeshStandardMaterial).vertexColors;
+        if (list.length < 2 && !baked) return;
         const geos = list.map((m) => {
           m.updateMatrix();
           const g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
           Object.keys(g.attributes).forEach((k) => { if (k !== 'position' && k !== 'normal' && k !== 'uv') g.deleteAttribute(k); });
           g.clearGroups();
           g.applyMatrix4(m.matrix);
+          if (baked) {
+            const c = ((m.material as THREE.MeshStandardMaterial).color ?? new THREE.Color(1, 1, 1));
+            const n = g.attributes.position.count;
+            const col = new Float32Array(n * 3);
+            for (let i = 0; i < n; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
+            g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+          }
           return g;
         });
         const merged = mergeGeometries(geos);
@@ -2719,7 +2747,7 @@ const ThreeHeroBackground = ({
       }));
       // Robot surfaces are opaque except while fading (see the render loop): opaque objects skip
       // back-to-front sorting and blending, and the GPU can reject hidden pixels early.
-      [paint, accent, steel, frame, chrome, rubber, eyeMat, glowMat, lampMat].forEach((m) => {
+      [paint, accent, steel, frame, chrome, rubber, eyeMat, glowMat, lampMat, ...(litePaint && liteMetal ? [litePaint, liteMetal] : [])].forEach((m) => {
         m.userData.solid = true;
         m.transparent = false;
       });
@@ -2865,17 +2893,16 @@ const ThreeHeroBackground = ({
       const sL = shoulderL(rec), sR = shoulderR(rec), eL = elbowL(rec), eR = elbowR(rec);
       switch (hero.key) {
         case 'bumblebee': {
-          // Restless builder: quick bounce + alternating hands hammering away at a keyboard.
-          const f = t * 3.2;
-          bob = Math.sin(f) * 0.10 * amp;
-          swayZ = Math.sin(f * 0.5) * 0.03 * amp;
-          const type = (ph: number) => -(0.12 + 0.22 * (0.5 + 0.5 * Math.sin(f + ph))) * amp;
+          // Builder at the ready: stands planted (no bounce or sway), hands working a keyboard and the
+          // head turning — the same calm idle as the other leaders.
+          const f = t * 2.2;
+          const type = (ph: number) => -(0.12 + 0.2 * (0.5 + 0.5 * Math.sin(f + ph))) * amp;
           setJoint(sR, Math.sin(f + 0) * 0.05 * amp, 0, 0);
           setJoint(sL, Math.sin(f + Math.PI) * 0.05 * amp, 0, 0);
           setJoint(eR, type(0), 0, 0);
           setJoint(eL, type(Math.PI), 0, 0);
-          rec.act.headPitch = 0.05 + Math.sin(f) * 0.05 * amp;
-          rec.act.headYaw = Math.sin(f * 0.33) * 0.12 * amp;
+          rec.act.headPitch = 0.05 + Math.sin(f * 0.5) * 0.04 * amp;
+          rec.act.headYaw = Math.sin(f * 0.3) * 0.22 * amp;
           break;
         }
         case 'megatron': {
@@ -3802,7 +3829,7 @@ const MOTION_CSS = `
 .pass-book { position: relative; z-index: 1; }
 .pass-card:hover .pass-book { text-decoration: underline; text-underline-offset: 5px; }
 @media (min-width: 1024px) {
-  .pass-deck { display: flex; justify-content: center; align-items: center; perspective: 1400px; min-height: 34rem; }
+  .pass-deck { display: flex; justify-content: center; align-items: stretch; perspective: 1400px; padding: 1.75rem 0; }
   .pass-card { flex: 0 0 min(25.5rem, 33vw); filter: brightness(.62) saturate(.8);
     transform: translateY(14px) rotateY(-9deg) scale(.93); }
   .pass-card + .pass-card { margin-left: -9.5rem; }
@@ -3924,7 +3951,6 @@ const MOTION_CSS = `
 @keyframes exploreChev { 0% { transform: rotate(90deg) translateX(-3px); opacity: 0; } 40% { opacity: 1; } 100% { transform: rotate(90deg) translateX(4px); opacity: 0; } }
 /* Short laptop screens (a 1366×768 display leaves ~650px for the page): compact key, hint only if it fits */
 @media (min-width: 640px) and (max-height: 760px) { .explore-btn { padding: .6rem 1.6rem .6rem 1.9rem; font-size: .74rem; } }
-@media (min-width: 640px) and (max-height: 700px) { .explore-hint { display: none; } }
 @media (prefers-reduced-motion: reduce) { .explore-btn::before, .explore-btn::after, .explore-shine::before, .explore-chevs svg { animation: none; } }
 
 /* Hero → techno-fest hand-off (vars set by TechnoFestSection on scroll): the hero HUD lifts and fades,
@@ -5411,7 +5437,6 @@ export default function App() {
   const [homePhase, setHomePhase] = useState<'hero' | 'opening' | 'explored'>('hero');
   const homePhaseRef = useRef(homePhase);
   homePhaseRef.current = homePhase;
-  const exploredOnce = useRef(false);   // the opening animation plays on the first EXPLORE only
   const snapTop = useRef(false);        // jump to the top once the explored layout is in
   useEffect(() => {
     const sync = () => setSubPage(subPageFromHash());
@@ -5634,23 +5659,20 @@ export default function App() {
     setHomePhase('hero');
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
   }, []);
-  // EXPLORE: first time, a timed transition (hero lifts away, arena dims, the headline assembles);
-  // afterwards straight to the techno-fest page.
+  // EXPLORE (button or scrolling down on the hero): every time, a timed transition (hero lifts away,
+  // arena dims, the headline assembles). Only reduced-motion users jump straight there.
   const explore = useCallback(() => {
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (exploredOnce.current || reduce) {
-      exploredOnce.current = true;
+    if (reduce) {
       snapTop.current = true;
       setHomePhase('explored');
       return;
     }
-    exploredOnce.current = true;
     tfDrive.on = true;
     setHomePhase('opening');
   }, []);
   // Anything that needs a section past the hero switches to the explored page first (no animation).
   const toExplored = useCallback(() => {
-    exploredOnce.current = true;
     setHomePhase((ph) => (ph === 'hero' ? 'explored' : ph));
   }, []);
   const goSubPage = useCallback((page: 'certificate' | 'mypass') => {
@@ -5683,7 +5705,7 @@ export default function App() {
     setTimeout(() => glideTo(document.getElementById('roster')), 80);
   }, [toExplored]);
 
-  // First-time EXPLORE transition (~1.25 s, time-based so it runs at full frame rate): the page glides
+  // EXPLORE transition (~1.25 s, time-based so it runs at full frame rate): the page glides
   // from the hero to the techno-fest section while the hero lifts away, the arena dims and the
   // headline assembles. Scrolling input is held until it lands; then the hero page is dropped and the
   // view is kept exactly where it ended.
@@ -5941,11 +5963,56 @@ export default function App() {
     let lastY = window.scrollY;
     let prev: { key: string; from: number; exit: number } | null = null;   // leader on stage last update
 
-    // Scrolling is never held: the page always follows the user's own scroll. A robot that has not finished
-    // arriving simply keeps walking in while the page moves on, and one that is passed walks off the edge.
+    // Scroll hold, only for the car: when the user's own downward scrolling reaches a leader's card while
+    // that leader's first-time drive-in + transformation is still to come or playing, the page holds at
+    // the pinned card until the robot is standing. Once a leader has arrived, its card never holds again,
+    // so scrolling stays free otherwise. Scrolling up is never held, and only wheel / touch / keyboard
+    // scrolling counts, so TOP, HOME, nav links and buttons that scroll the page go straight through.
+    let lock: { y: number; key: string; t0: number; max: number } | null = null;
+    let lastInput = 0;
+    const introUntil = new Map<string, number>();   // when each leader's car animation ends
+    const carPlaying = (k: string) => !stagedOnce.current.has(k) || (introUntil.get(k) ?? 0) > performance.now();
+    const SCROLL_KEYS = new Set(['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', ' ', 'End', 'Home']);
+    const onInput = (e: Event) => {
+      lastInput = performance.now();
+      if (lock && e.cancelable) e.preventDefault();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (!SCROLL_KEYS.has(e.key) || (e.target as HTMLElement)?.closest?.('input, textarea, select, [contenteditable]')) return;
+      onInput(e);
+    };
+    const holdTo = (y: number) => window.scrollTo({ top: y, behavior: 'instant' as ScrollBehavior });
+    const watchLock = () => {
+      if (!lock) return;
+      const now = performance.now();
+      if ((st.settled && st.key === lock.key && now - lock.t0 > 300) || now - lock.t0 > lock.max) { lock = null; return; }
+      if (Math.abs(window.scrollY - lock.y) > 1) holdTo(lock.y);
+      requestAnimationFrame(watchLock);
+    };
+
     const update = () => {
       raf = 0;
       const down = window.scrollY >= lastY;
+      if (lock) {
+        if (Math.abs(window.scrollY - lock.y) > 1) holdTo(lock.y);
+      } else if (down && !reduce && sceneReadyRef.current && window.innerWidth >= 1024 && performance.now() - lastInput < 500) {
+        // The first card this scroll step crossed (a fast flick can cross several in one frame).
+        const y = window.scrollY;
+        let stop: { y: number; key: string } | null = null;
+        document.querySelectorAll<HTMLElement>('[data-stage-row]').forEach((row) => {
+          const top = row.getBoundingClientRect().top + y;   // the card pins here
+          const k = row.dataset.stageRow!;
+          if (carPlaying(k) && lastY < top - 2 && top <= y + 2 && (!stop || top < stop.y)) stop = { y: top, key: k };
+        });
+        if (stop) {
+          const { y: sy, key } = stop as { y: number; key: string };
+          const left = Math.max(0, (introUntil.get(key) ?? performance.now() + 4800) - performance.now());
+          lock = { y: sy, key, t0: performance.now(), max: left + 1500 };
+          st.settled = false;
+          holdTo(sy);
+          requestAnimationFrame(watchLock);
+        }
+      }
       lastY = window.scrollY;
       // A fast scroll can skip a leader's walk-out entirely. Whoever loses the stage is told which
       // edge to keep walking to (exit going down, back where it came from going up), so robots
@@ -5984,6 +6051,7 @@ export default function App() {
       const entering = r.bottom >= vh;
       if (!stagedOnce.current.has(key) && !reduce && entering) {
         stagedOnce.current.add(key);
+        introUntil.set(key, performance.now() + 4600);   // drive-in + transformation length
         st.introId += 1;
         st.introKey = key;
         st.fromU = from;
@@ -6000,10 +6068,17 @@ export default function App() {
     update();
     window.addEventListener('scroll', onScroll, { passive: true });
     window.addEventListener('resize', onScroll);
+    window.addEventListener('wheel', onInput, { passive: false });
+    window.addEventListener('touchmove', onInput, { passive: false });
+    window.addEventListener('keydown', onKey);
     return () => {
       cancelAnimationFrame(raf);
+      lock = null;
       window.removeEventListener('scroll', onScroll);
       window.removeEventListener('resize', onScroll);
+      window.removeEventListener('wheel', onInput);
+      window.removeEventListener('touchmove', onInput);
+      window.removeEventListener('keydown', onKey);
       st.key = null;
     };
   }, [activeHero, subPage, gate, homePhase]);   // re-evaluate when the home page switches (hero ⇄ explored)
@@ -6378,8 +6453,7 @@ export default function App() {
                           <ChevronRight className="w-4 h-4 rotate-90" />
                         </span>
                       </button>
-                      <span className="explore-hint mt-1.5 text-[9px] sm:text-[10px] font-mono font-bold tracking-[0.35em] text-amber-200/80">OR SCROLL DOWN</span>
-                    </div>
+                                          </div>
                   </div>
                 </div>
 
@@ -6420,7 +6494,18 @@ export default function App() {
 
             {homePhase !== 'hero' && (<>
             {/* Second page (EXPLORE): the headline on its own Transformers backdrop */}
-            <TechnoFestSection />
+            <div className="relative">
+              {/* Back up to the main (hero) page */}
+              {homePhase === 'explored' && (
+                <button
+                  onClick={goHome}
+                  className="absolute top-3 sm:top-4 left-1/2 -translate-x-1/2 z-20 inline-flex items-center gap-2 rounded-full border border-amber-400/60 bg-slate-950/70 px-4 py-1.5 text-[10px] sm:text-[11px] font-mono font-bold tracking-[0.3em] text-amber-300 hover:bg-amber-400 hover:text-black transition-colors"
+                >
+                  <ChevronRight className="w-3.5 h-3.5 -rotate-90" /> GO TO TOP
+                </button>
+              )}
+              <TechnoFestSection />
+            </div>
 
             {/* Overall prize-pool cinematic reveal */}
             <PrizePoolSection onExplore={() => document.getElementById('roster')?.scrollIntoView({
@@ -7017,7 +7102,7 @@ export default function App() {
                 </div>
               </button>
               <p className="text-sm leading-relaxed text-slate-300">
-                National Level Techno Fest at KPR Institute of Engineering and Technology, Coimbatore. Four arenas, ten-plus events and a 24-hour flagship hackathon on Feb 4 – 5, 2027.
+                National Level Techno Fest at KPR Institute of Engineering and Technology, Coimbatore. Four arenas, ten-plus events and a 24-hour flagship hackathon<br />on Feb 4 – 5, 2027.
               </p>
             </div>
             <div className="flex items-center gap-4 self-start rounded-full border border-slate-700/80 px-5 py-2.5">
@@ -7100,7 +7185,7 @@ export default function App() {
               onClick={goHome}
               className="inline-flex items-center gap-2 rounded-full border border-slate-700/80 px-5 py-2.5 font-plex text-xs font-bold tracking-widest text-slate-200 hover:border-slate-500 hover:text-white"
             >
-              TOP <ChevronRight className="w-4 h-4 -rotate-90" />
+              HOME <ChevronRight className="w-4 h-4 -rotate-90" />
             </button>
           </div>
         </div>
