@@ -3017,7 +3017,9 @@ const ThreeHeroBackground = ({
           gl_FragColor = vec4(clamp(c, 0.0, 8.0), 1.0);
         }`
     });
-    const bloom = composer ? new UnrealBloomPass(new THREE.Vector2(size0.w, size0.h), 0.22, 0.4, 0.95) : null;
+    // Bloom only for what is genuinely bright (eyes, energon lights, the transformation flash): with the
+    // brighter lighting a low threshold put a glowing haze over the robots and the city.
+    const bloom = composer ? new UnrealBloomPass(new THREE.Vector2(size0.w, size0.h), 0.22, 0.35, 1.15) : null;
     const outputPass = new OutputPass();
     if (composer && bloom) {
       composer.addPass(sanitize);
@@ -3541,7 +3543,7 @@ const ThreeHeroBackground = ({
         if (sparkT > 1.4) sparkT = -1;
       }
       flash.intensity *= 0.9;
-      if (bloom) bloom.strength = 0.55 + Math.min(flash.intensity / 900, 1) * 0.9;
+      if (bloom) bloom.strength = 0.3 + Math.min(flash.intensity / 900, 1) * 0.9;
 
       // Sky life: drifting cloud banks and mist, crossing air traffic with strobes.
       if (!reduceMotion) {
