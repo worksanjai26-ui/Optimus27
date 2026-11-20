@@ -1172,7 +1172,8 @@ const ThreeHeroBackground = ({
     renderer.setSize(size0.w, size0.h);
     renderer.setPixelRatio(dpr);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 0.62;
+    // Brighter overall (the arena read as night-time): the low tier, with fewer lights, gets a little more.
+    renderer.toneMappingExposure = lite ? 0.98 : 0.84;
     renderer.shadowMap.enabled = !lite;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     // The mirror floor re-renders the scene; without this the shadow map is redrawn
@@ -1253,10 +1254,10 @@ const ThreeHeroBackground = ({
     scene.add(sky);
 
     /* ---------- lighting ---------- */
-    // Low tier: the two off-stage spotlights and the front fill are left out (spot / point lights are the
-    // costliest per pixel); a brighter sky light makes up for them.
-    scene.add(new THREE.HemisphereLight(0x6f86b0, 0x0a0c12, lite ? 0.62 : 0.35));
-    const key = new THREE.DirectionalLight(0xfff0dc, 1.5);
+    // Low tier: the two off-stage spotlights are left out (spot / point lights are the costliest per
+    // pixel); a brighter sky light makes up for them.
+    scene.add(new THREE.HemisphereLight(0x8a9fc8, 0x161a24, lite ? 0.95 : 0.6));
+    const key = new THREE.DirectionalLight(0xfff0dc, 1.9);
     key.position.set(8, 18, 12);
     key.castShadow = true;
     key.shadow.mapSize.set(lowPower ? 1024 : 2048, lowPower ? 1024 : 2048);
@@ -1275,9 +1276,10 @@ const ThreeHeroBackground = ({
     const rimCool = new THREE.DirectionalLight(0x57b8ff, 1.0);
     rimCool.position.set(10, 5, -14);
     scene.add(rimCool);
-    const frontFill = new THREE.DirectionalLight(0x8aa4d6, 0.35);
-    frontFill.position.set(0, 2, 16);
-    if (!lite) scene.add(frontFill);
+    // Front fill lights the leaders' faces and chests toward the camera (directional: cheap, so every tier gets it).
+    const frontFill = new THREE.DirectionalLight(0xc7d4f0, lite ? 0.75 : 0.6);
+    frontFill.position.set(0, 4, 16);
+    scene.add(frontFill);
     const gateLight = new THREE.PointLight(DEFAULT_ACCENT, 28, 30, 2);
     gateLight.position.set(0, GROUND_Y + 4.5, -8);
     scene.add(gateLight);
@@ -3774,6 +3776,30 @@ const MOTION_CSS = `
 /* ---------- Prize-pool section (transparent: the 3D robot scene shows through) ---------- */
 .prize-sec { background: #03050b; }
 /* Prize vault backdrop */
+/* "Choose your leader" label */
+.lead-label { font-family: 'Archivo', sans-serif; font-weight: 800; font-stretch: 125%; text-transform: uppercase; letter-spacing: .32em;
+  background: linear-gradient(90deg, #fde68a, #facc15 50%, #f59e0b); -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 0 10px rgba(250,204,21,.35)); }
+.lead-hatch-r { transform: scaleX(-1); }
+/* Leader cards: lift, light sweep and corner brackets on hover (transform / opacity only) */
+.leader-card { transition: transform .4s cubic-bezier(.2,.8,.2,1), border-color .3s ease, box-shadow .3s ease; }
+.leader-card:hover { transform: translateY(-6px) scale(1.012); }
+.lc-sweep { position: absolute; inset: 0; overflow: hidden; pointer-events: none; border-radius: inherit; }
+.lc-sweep::before { content: ''; position: absolute; top: -10%; bottom: -10%; left: 0; width: 35%;
+  background: linear-gradient(100deg, transparent, color-mix(in srgb, var(--c) 22%, transparent), rgba(255,255,255,.10), transparent);
+  transform: translateX(-130%) skewX(-18deg); transition: transform .9s cubic-bezier(.3,.7,.2,1); }
+.leader-card:hover .lc-sweep::before { transform: translateX(330%) skewX(-18deg); }
+.lc-corner { position: absolute; width: 26px; height: 26px; pointer-events: none; border-color: var(--c); opacity: 0;
+  transition: opacity .3s ease, transform .35s cubic-bezier(.2,.8,.2,1); }
+.lc-tl { top: 12px; left: 12px; border-top: 2px solid; border-left: 2px solid; border-color: var(--c); transform: translate(8px, 8px); }
+.lc-tr { top: 12px; right: 12px; border-top: 2px solid; border-right: 2px solid; border-color: var(--c); transform: translate(-8px, 8px); }
+.lc-bl { bottom: 12px; left: 12px; border-bottom: 2px solid; border-left: 2px solid; border-color: var(--c); transform: translate(8px, -8px); }
+.lc-br { bottom: 12px; right: 12px; border-bottom: 2px solid; border-right: 2px solid; border-color: var(--c); transform: translate(-8px, -8px); }
+.leader-card:hover .lc-corner { opacity: 1; transform: none; }
+.lc-num { display: inline-block; transition: transform .35s cubic-bezier(.2,.8,.2,1); }
+.leader-card:hover .lc-num { transform: translateY(-3px) scale(1.15); }
+@media (prefers-reduced-motion: reduce) { .leader-card, .lc-sweep::before, .lc-corner, .lc-num { transition: none; } }
+
 /* Pass deck: Cybertronian access keys. Laptops+: one overlapping row, the active key rises out
    of the deck while the rest sit tilted back and dimmed. Below lg: a plain grid. */
 .cert-grid { opacity: .9;
@@ -3968,7 +3994,7 @@ const MOTION_CSS = `
    fade that is long while the section is just rising (the hero melts into dark steel) and tightens as it
    scrolls in. Words slide in from the sides. */
 .tf-sec {
-  --fade: calc(5vh + (1 - var(--p)) * 30vh);
+  --fade: 18vh;   /* fixed: an animated mask length repaints the whole section every frame */
   -webkit-mask-image: linear-gradient(180deg, transparent 0, rgba(0,0,0,.35) calc(var(--fade) * .45), #000 var(--fade));
   mask-image: linear-gradient(180deg, transparent 0, rgba(0,0,0,.35) calc(var(--fade) * .45), #000 var(--fade));
 }
@@ -5215,7 +5241,7 @@ function PrizePoolSection({ onExplore }: { onExplore: () => void }) {
     <section
       ref={ref}
       aria-label="Overall prize pool: one lakh rupees and above"
-      className={`prize-sec relative z-10 overflow-hidden pt-16 pb-24 sm:pt-24 sm:pb-28 px-4 ${shown ? 'prize-in' : 'prize-pre'}`}
+      className={`prize-sec relative z-10 overflow-hidden pt-16 pb-10 sm:pt-24 sm:pb-12 px-4 ${shown ? 'prize-in' : 'prize-pre'}`}
     >
       {/* Backdrop — "the AllSpark vault": dark Cybertron steel lit gold from the centre, a giant
           vault-door mechanism turning slowly behind the trophy, energon light pillars, a faint
@@ -5731,13 +5757,18 @@ export default function App() {
       root.setProperty('--scene-dim', e.toFixed(3));
       if (k < 1) { raf = requestAnimationFrame(step); return; }
       tfDrive.on = false;
+      sceneGate.glide = false;
       snapTop.current = true;
       setHomePhase('explored');
     };
+    // The arena dims under the rising section anyway, so the 3D holds its frame for these 1.25 s and all
+    // the frame time goes to the page moving.
+    sceneGate.glide = true;
     raf = requestAnimationFrame(step);
     return () => {
       cancelAnimationFrame(raf);
       tfDrive.on = false;
+      sceneGate.glide = false;
       window.removeEventListener('wheel', block);
       window.removeEventListener('touchmove', block);
     };
@@ -6517,14 +6548,18 @@ export default function App() {
             <section id="roster" className="roster-sec relative scroll-mt-24">
               {/* Continuity from the prize vault: dark steel fades away and the energon conduit carries on */}
               <div className="pointer-events-none absolute inset-x-0 -top-1 h-[40vh] bg-gradient-to-b from-[#03050b] via-[#03050b]/80 to-transparent" aria-hidden="true" />
-              <div className="pv-conduit absolute left-1/2 top-0 h-28" aria-hidden="true"><i /><i /></div>
-              {/* Stage lighting: darker edges so cards and robots read over the arena */}
-              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_50%_55%,transparent_40%,rgba(3,5,11,.55)_100%)]" aria-hidden="true" />
+              {/* starts right under the EXPLORE EVENTS button (in the prize section's bottom padding) and ends at the label */}
+              <div className="pv-conduit absolute left-1/2 z-20 -top-5 h-[6.25rem] sm:-top-7 sm:h-[6.75rem]" aria-hidden="true"><i /><i /></div>
+              {/* Stage lighting: slightly darker edges so cards and robots read over the arena */}
+              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_85%_65%_at_50%_55%,transparent_50%,rgba(3,5,11,.28)_100%)]" aria-hidden="true" />
 
-              <div className="relative px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto pt-28 pb-10">
+              <div className="relative px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto pt-20 pb-10">
                 <div className="text-center max-w-3xl mx-auto mb-10 lg:mb-0 space-y-3">
-                  <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-md text-xs font-mono border ${t.chip}`}>
-                    <Shield className="w-3.5 h-3.5" /> CHOOSE YOUR LEADER
+                  {/* Label: wide display type between energon hazard stripes */}
+                  <div className="inline-flex items-center gap-3 sm:gap-4">
+                    <span className="pass-hatch" style={{ ['--c' as string]: '#facc15' }} aria-hidden="true" />
+                    <span className="lead-label text-xs sm:text-sm">Choose your leader</span>
+                    <span className="pass-hatch lead-hatch-r" style={{ ['--c' as string]: '#facc15' }} aria-hidden="true" />
                   </div>
                   <h2 className="text-3xl sm:text-5xl font-black tracking-tight uppercase">THE ALLSPARK ROSTER</h2>
                   <p className="text-slate-300 text-sm sm:text-base">
@@ -6543,8 +6578,12 @@ export default function App() {
                         <div className={`lg:sticky lg:top-0 lg:h-screen lg:pt-20 flex items-center ${card === 'right' ? 'lg:justify-end' : 'lg:justify-start'}`}>
                         <button
                           onClick={() => goHero(h.key)}
-                          className={`group w-full lg:w-[min(52%,760px)] text-left relative overflow-hidden rounded-3xl bg-slate-950/85 border border-slate-800 ${onHover(ht.ring)} ${onHover(ht.glow)} p-6 sm:p-8 lg:p-10 transition-all hover:-translate-y-1`}
+                          className={`leader-card group w-full lg:w-[min(52%,760px)] text-left relative overflow-hidden rounded-3xl bg-slate-950/85 border border-slate-800 ${onHover(ht.ring)} ${onHover(ht.glow)} p-6 sm:p-8 lg:p-10`}
+                          style={{ ['--c' as string]: hex }}
                         >
+                          {/* Hover: the card lifts, a light sweep crosses it and corner brackets lock on in the leader's colour */}
+                          <span className="lc-sweep" aria-hidden="true" />
+                          {['lc-tl', 'lc-tr', 'lc-bl', 'lc-br'].map((c) => <span key={c} className={`lc-corner ${c}`} aria-hidden="true" />)}
                           <div className={`absolute -top-12 ${card === 'right' ? '-right-12' : '-left-12'} w-48 h-48 rounded-full bg-gradient-to-br ${ht.grad} opacity-15 blur-3xl`} />
                           <div className="relative space-y-3">
                             <span className="inline-block px-3 py-1 rounded-full text-[10px] font-mono tracking-widest border border-slate-700 text-slate-400">
@@ -6552,7 +6591,7 @@ export default function App() {
                             </span>
                             {/* Event number beside the name (01 · 02 …), in the leader's colour */}
                             <div className="flex items-start gap-3 sm:gap-4">
-                              <span className={`font-mono text-sm sm:text-base font-bold tracking-wider pt-1 sm:pt-1.5 ${ht.text} opacity-80`}>
+                              <span className={`lc-num font-mono text-sm sm:text-base font-bold tracking-wider pt-1 sm:pt-1.5 ${ht.text} opacity-80`}>
                                 {String(idx + 1).padStart(2, '0')}
                               </span>
                               <h3 className={`text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight uppercase ${ht.text}`}>{h.name}</h3>
