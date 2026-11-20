@@ -123,7 +123,7 @@ http://localhost:5178/?quality=high   # full effects, mirror floor
 │   ├── identity.ts          Optimus IDs, team checks, attendance (demo data layer)
 │   └── index.css            Tailwind entry
 ├── public/
-│   ├── assets/              Logos (fest, KPR, sponsors)
+│   ├── assets/              Logos (fest, KPR, ACM-W)
 │   ├── env/                 HDR environment lighting for the 3D scene
 │   ├── music/theme.mp3      Background theme
 │   └── sfx/transform.mp3    Transformation sound
@@ -189,6 +189,6 @@ Variables*.
 ## Credits
 
 - Night-city HDR lighting: "Shanghai Bund" from [Poly Haven](https://polyhaven.com) (CC0).
-- Presented by **ACM-W** and **Nexora**.
+- Presented by **ACM-W**.
 - Transformers names and imagery belong to their respective owners; used here as a
   fest theme.

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import * as THREE from 'three';
 import { Reflector } from 'three/addons/objects/Reflector.js';
-import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
+import { toCreasedNormals, mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
@@ -993,8 +993,12 @@ const probeQualityTier = (width: number): QualityTier => {
   if (mobile || cores <= 4 || mem <= 4) return 'low';
   // Every Intel integrated GPU (HD, UHD, Iris, Xe) goes to lite: measured ~24 fps with bloom vs a steady cap without.
   if (/SwiftShader|llvmpipe|Software|Basic Render|Mali|Adreno|PowerVR|Intel(?!.*Arc)/i.test(gpu)) return 'low';
-  // Privacy browsers (Brave, Firefox resist-fingerprinting) hide or fake the GPU name; without a
-  // name we can trust, don't assume a discrete GPU. The render loop still drops effects if it lags.
+  // Privacy browsers (Brave, Firefox resist-fingerprinting) hide or fake the GPU name. Without a
+  // name we can trust, a machine with 8 or fewer cores is most likely a laptop on integrated
+  // graphics, so it starts light instead of stuttering until the render loop sheds effects.
+  const discrete = /NVIDIA|GeForce|Quadro|RTX|GTX|Radeon (RX|Pro)|Arc/i.test(gpu);
+  const hiddenGpu = !discrete && (!gpu || /Generic|ANGLE \(Google/i.test(gpu) || !!(navigator as Navigator & { brave?: unknown }).brave);
+  if (hiddenGpu && cores <= 8) return 'low';
   if (!gpu || width < 1024 || /Radeon(\(TM\))? Graphics|Vega|Generic|ANGLE \(Google/i.test(gpu)) return 'mid';
   return 'high';
 };
@@ -1492,7 +1496,7 @@ const ThreeHeroBackground = ({
       infoCv.t.needsUpdate = true;
     };
     const sponsorCv = liveCanvas(1024, 520);
-    const logoImgs: HTMLImageElement[] = [BASE + 'assets/acmw.png', BASE + 'assets/nexora.png'].map((src) => {
+    const logoImgs: HTMLImageElement[] = [BASE + 'assets/acmw.png'].map((src) => {
       const im = new Image();
       im.src = src;
       return im;
@@ -1508,19 +1512,12 @@ const ThreeHeroBackground = ({
       g.fillText('PRESENTED BY', 512, 96);
       spaced(g, 0);
       const boxH = 270, cy = 300;
-      logoImgs.forEach((im, i) => {
+      logoImgs.forEach((im) => {
         if (!im.complete || !im.naturalWidth) return;
-        const s = Math.min(boxH / im.naturalHeight, 380 / im.naturalWidth);
+        const s = Math.min(boxH / im.naturalHeight, 620 / im.naturalWidth);
         const dw = im.naturalWidth * s, dh = im.naturalHeight * s;
-        const cx = i === 0 ? 266 : 758;
-        g.drawImage(im, cx - dw / 2, cy - dh / 2, dw, dh);
+        g.drawImage(im, 512 - dw / 2, cy - dh / 2, dw, dh);
       });
-      const div = g.createLinearGradient(0, 170, 0, 440);
-      div.addColorStop(0, 'rgba(148,163,184,0)');
-      div.addColorStop(0.5, 'rgba(148,163,184,0.55)');
-      div.addColorStop(1, 'rgba(148,163,184,0)');
-      g.fillStyle = div;
-      g.fillRect(511, 170, 2, 270);
       sponsorCv.t.needsUpdate = true;
     };
     drawInfo();
@@ -1687,26 +1684,33 @@ const ThreeHeroBackground = ({
       const f = hero.features;
       const paintMetal = hero.key === 'megatron' ? 0.85 : 0.45;
 
-      const paint = new THREE.MeshPhysicalMaterial({
-        color: c.primary, map: dirtTex, metalness: paintMetal, roughness: 0.42, roughnessMap: grimeTex,
-        bumpMap: panelTex, bumpScale: 0.3, clearcoat: 1, clearcoatRoughness: 0.07, envMapIntensity: 1.3,
-        transparent: true, opacity: 1
-      });
+      // Low tier: standard shading (no clear-coat lobe) and no bump maps — the costliest per-pixel work.
+      const paint = lite
+        ? new THREE.MeshStandardMaterial({
+          color: c.primary, map: dirtTex, metalness: paintMetal, roughness: 0.42, roughnessMap: grimeTex,
+          envMapIntensity: 1.3, transparent: true, opacity: 1
+        })
+        : new THREE.MeshPhysicalMaterial({
+          color: c.primary, map: dirtTex, metalness: paintMetal, roughness: 0.42, roughnessMap: grimeTex,
+          bumpMap: panelTex, bumpScale: 0.3, clearcoat: 1, clearcoatRoughness: 0.07, envMapIntensity: 1.3,
+          transparent: true, opacity: 1
+        });
+      const bump = (scale: number) => (lite ? {} : { bumpMap: panelTex, bumpScale: scale });
       const accent = paint.clone();
       accent.color.setHex(c.secondary);
       const steel = new THREE.MeshStandardMaterial({
         color: c.metal, map: dirtTex, metalness: 1, roughness: 0.72, roughnessMap: grimeTex,
-        bumpMap: panelTex, bumpScale: 0.3, envMapIntensity: 1.2, transparent: true, opacity: 1
+        ...bump(0.3), envMapIntensity: 1.2, transparent: true, opacity: 1
       });
       const frame = new THREE.MeshStandardMaterial({
         color: 0x16191e, metalness: 0.9, roughness: 0.95, roughnessMap: grimeTex,
-        bumpMap: panelTex, bumpScale: 0.6, envMapIntensity: 0.9, transparent: true, opacity: 1
+        ...bump(0.6), envMapIntensity: 0.9, transparent: true, opacity: 1
       });
       const chrome = new THREE.MeshStandardMaterial({
         color: 0xc8cdd4, metalness: 1, roughness: 0.32, roughnessMap: grimeTex, envMapIntensity: 1.5, transparent: true, opacity: 1
       });
       const rubber = new THREE.MeshStandardMaterial({
-        color: 0x0b0b0d, metalness: 0, roughness: 0.92, bumpMap: panelTex, bumpScale: 0.2, transparent: true, opacity: 1
+        color: 0x0b0b0d, metalness: 0, roughness: 0.92, ...bump(0.2), transparent: true, opacity: 1
       });
       const glass = new THREE.MeshPhysicalMaterial({
         color: 0x0a1822, metalness: 0.2, roughness: 0.18, clearcoat: 1, clearcoatRoughness: 0.15,
@@ -2598,6 +2602,53 @@ const ThreeHeroBackground = ({
         }, undefined, () => { /* no model file yet: keep the code-built vehicle */ });
       }
 
+      // Fewer draw calls: inside the robot rig, every leaf part that never moves on its own is baked
+      // into one mesh per parent joint and material (a robot drops from ~100+ draws to a few dozen).
+      // Joints, the head and anything animated individually keep their own objects, so poses,
+      // folding and fades work exactly as before.
+      const keep = new Set<THREE.Object3D>([
+        head, ...foldJoints.map((j) => j.obj), ...actShoulders.map((a) => a.obj), ...actElbows.map((a) => a.obj),
+        ...(actCannon ? [actCannon.obj] : [])
+      ]);
+      const buckets = new Map<THREE.Object3D, Map<THREE.Material, THREE.Mesh[]>>();
+      rig.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (!m.isMesh || keep.has(m) || m.children.length || !m.parent || Array.isArray(m.material)) return;
+        const g = m.geometry;
+        if (!g.attributes.position || !g.attributes.normal || !g.attributes.uv || g.morphAttributes.position) return;
+        let byMat = buckets.get(m.parent);
+        if (!byMat) buckets.set(m.parent, (byMat = new Map()));
+        const list = byMat.get(m.material as THREE.Material) ?? [];
+        list.push(m);
+        byMat.set(m.material as THREE.Material, list);
+      });
+      buckets.forEach((byMat, parent) => byMat.forEach((list, mat) => {
+        if (list.length < 2) return;
+        const geos = list.map((m) => {
+          m.updateMatrix();
+          const g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
+          Object.keys(g.attributes).forEach((k) => { if (k !== 'position' && k !== 'normal' && k !== 'uv') g.deleteAttribute(k); });
+          g.clearGroups();
+          g.applyMatrix4(m.matrix);
+          return g;
+        });
+        const merged = mergeGeometries(geos);
+        geos.forEach((g) => g.dispose());
+        if (!merged) return;
+        const mm = new THREE.Mesh(merged, mat);
+        mm.castShadow = list.some((m) => m.castShadow);
+        mm.receiveShadow = list.some((m) => m.receiveShadow);
+        mm.renderOrder = list[0].renderOrder;
+        list.forEach((m) => parent.remove(m));
+        parent.add(mm);
+      }));
+      // Robot surfaces are opaque except while fading (see the render loop): opaque objects skip
+      // back-to-front sorting and blending, and the GPU can reject hidden pixels early.
+      [paint, accent, steel, frame, chrome, rubber, eyeMat, glowMat, lampMat].forEach((m) => {
+        m.userData.solid = true;
+        m.transparent = false;
+      });
+
       outer.scale.setScalar(hero.layout.scale * 0.8);
       const baseY = GROUND_Y + (hero.layout.y || 0);
       outer.position.set(hero.layout.x, baseY, hero.layout.z);
@@ -2930,6 +2981,8 @@ const ThreeHeroBackground = ({
     let raf = 0;
     let warmFrames = 0;        // frames rendered so far (shaders compile during these)
     let skipOdd = false;
+    const frameCap = lite;
+    let lastDrawAt = 0;
     let perfAcc = 0, perfFrames = 0, headroomWindows = 0, slowWindows = 0;
     // Bloom, the mirror floor and shadow maps are the costly extras. If frames still run long,
     // they are switched off for the rest of the visit before the render scale is touched.
@@ -2970,6 +3023,13 @@ const ThreeHeroBackground = ({
       // Scrolled down into the page content the scene is mostly covered: draw at half rate.
       // Full rate only while a leader is actually on the events stage.
       const onStage = !!stage?.current.key && !!records[stage.current.key];
+      // Low tier: a steady 30 fps instead of an uneven 40–50, which leaves the CPU and GPU free for
+      // scrolling and the page's own animations.
+      if (frameCap) {
+        const now = performance.now();
+        if (now - lastDrawAt < 1000 / 31) return;
+        lastDrawAt = now;
+      }
       const throttled = window.scrollY > window.innerHeight * 0.8 && !onStage;
       if (throttled) {
         skipOdd = !skipOdd;
@@ -2982,8 +3042,9 @@ const ThreeHeroBackground = ({
       if (warmFrames === 40) onReadyRef.current?.();
       // Adaptive resolution: step the render scale down quickly when frames run long,
       // and back up only after sustained headroom (each change reallocates targets).
-      // While scrolled down only every other frame is drawn, so halve the gap to compare like for like.
-      const frameDt = throttled ? rawDt / 2 : rawDt;
+      // While scrolled down only every other frame is drawn (and the low tier draws at half rate),
+      // so scale the gap to compare like for like.
+      const frameDt = rawDt / ((throttled ? 2 : 1) * (frameCap ? 2 : 1));
       if (!pausedRef.current && warmFrames > 30 && frameDt < 0.25) {
         perfAcc += frameDt;
         perfFrames++;
@@ -3111,7 +3172,10 @@ const ThreeHeroBackground = ({
 
         // Fade + fully remove the non-inspected heroes so they never overlap the subject.
         const targetOpacity = hidden ? 0 : 1;
-        rec.materials.forEach((m) => { m.opacity += (targetOpacity * (m.userData.base ?? 1) - m.opacity) * 0.14; });
+        rec.materials.forEach((m) => {
+          m.opacity += (targetOpacity * (m.userData.base ?? 1) - m.opacity) * 0.14;
+          if (m.userData.solid) m.transparent = m.opacity < 0.995;
+        });
         if (hidden) {
           if (rec.materials[0].opacity < 0.04) rec.group.visible = false;
         } else {
@@ -3757,11 +3821,35 @@ const MOTION_CSS = `
 .prize-in .prize-heading-sweep { animation: prizeHeadSweep 1.3s ease-out .8s 1 both; }
 @keyframes prizeHeadSweep { 0% { background-position: 150% 0; opacity: 1; } 100% { background-position: -50% 0; opacity: 0; } }
 
-.explore-btn { box-shadow: 0 0 0 0 rgba(250,204,21,.45); animation: explorePulse 2.4s ease-out infinite; }
-.explore-chev { animation: exploreBob 1.6s ease-in-out infinite; }
-@keyframes explorePulse { 0% { box-shadow: 0 0 0 0 rgba(250,204,21,.45); } 70%, 100% { box-shadow: 0 0 0 14px rgba(250,204,21,0); } }
-@keyframes exploreBob { 0%, 100% { transform: rotate(90deg) translateX(0); } 50% { transform: rotate(90deg) translateX(3px); } }
-@media (prefers-reduced-motion: reduce) { .explore-btn, .explore-chev { animation: none; } }
+/* EXPLORE energon key. Every motion is transform / opacity on its own layer, so it costs nothing over the 3D canvas. */
+.explore-btn { position: relative; display: inline-flex; align-items: center; gap: .6rem; overflow: visible;
+  padding: .8rem 1.9rem .8rem 2.2rem; border-radius: 9999px; font-weight: 900; letter-spacing: .32em; font-size: .78rem; color: #1a1200;
+  background: linear-gradient(100deg, #f59e0b, #fde047 45%, #fbbf24);
+  box-shadow: 0 0 0 1px rgba(254,240,138,.7) inset, 0 0 26px rgba(250,204,21,.55), 0 8px 26px rgba(0,0,0,.45);
+  transition: transform .2s ease; }
+.explore-btn:hover { transform: translateY(-2px) scale(1.04); }
+.explore-btn:active { transform: scale(.97); }
+@media (min-width: 640px) { .explore-btn { font-size: .85rem; padding: .9rem 2.1rem .9rem 2.5rem; } }
+/* light sweep across the key, clipped to its pill */
+.explore-shine { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; pointer-events: none; }
+.explore-shine::before { content: ''; position: absolute; top: -20%; bottom: -20%; left: 0; width: 38%;
+  background: linear-gradient(100deg, transparent, rgba(255,255,255,.75), transparent);
+  transform: translateX(-160%) skewX(-20deg); animation: exploreShine 2.8s ease-in-out infinite; will-change: transform; }
+/* two rings pulsing outward, staggered */
+.explore-btn::before, .explore-btn::after { content: ''; position: absolute; inset: 0; border-radius: inherit;
+  border: 2px solid rgba(250,204,21,.75); pointer-events: none; animation: explorePulse 2.2s ease-out infinite; will-change: transform, opacity; }
+.explore-btn::after { animation-delay: 1.1s; }
+/* chevrons flowing downward */
+.explore-chevs { display: inline-flex; flex-direction: column; line-height: 0; margin: -6px 0; }
+.explore-chevs svg { margin: -4px 0; animation: exploreChev 1.4s ease-in-out infinite; }
+.explore-chevs svg + svg { animation-delay: .2s; }
+@keyframes exploreShine { 0%, 45% { transform: translateX(-160%) skewX(-20deg); } 80%, 100% { transform: translateX(330%) skewX(-20deg); } }
+@keyframes explorePulse { 0% { transform: scale(1); opacity: .9; } 75%, 100% { transform: scale(1.22, 1.75); opacity: 0; } }
+@keyframes exploreChev { 0% { transform: rotate(90deg) translateX(-3px); opacity: 0; } 40% { opacity: 1; } 100% { transform: rotate(90deg) translateX(4px); opacity: 0; } }
+/* Short laptop screens (a 1366×768 display leaves ~650px for the page): compact key, hint only if it fits */
+@media (min-width: 640px) and (max-height: 760px) { .explore-btn { padding: .6rem 1.6rem .6rem 1.9rem; font-size: .74rem; } }
+@media (min-width: 640px) and (max-height: 700px) { .explore-hint { display: none; } }
+@media (prefers-reduced-motion: reduce) { .explore-btn::before, .explore-btn::after, .explore-shine::before, .explore-chevs svg { animation: none; } }
 
 /* Hero → techno-fest hand-off (vars set by TechnoFestSection on scroll): the hero HUD lifts and fades,
    the fixed 3D arena dims into dark steel. */
@@ -3917,12 +4005,12 @@ function Countdown() {
       ].map((item, i) => (
         <React.Fragment key={item.label}>
           {i > 0 && (
-            <span className="font-sans font-semibold leading-none text-slate-300/80" style={{ fontSize: 'clamp(1.75rem, 5.5vw, 3.25rem)' }}>:</span>
+            <span className="font-sans font-semibold leading-none text-slate-300/80" style={{ fontSize: 'clamp(1.6rem, min(5.5vw, 6.4vh), 3.25rem)' }}>:</span>
           )}
           <div className="flex flex-col items-center">
             <span
               className="font-sans font-semibold leading-none tabular-nums"
-              style={{ fontSize: 'clamp(1.75rem, 5.5vw, 3.25rem)', letterSpacing: '0.28em', marginRight: '-0.28em' }}
+              style={{ fontSize: 'clamp(1.6rem, min(5.5vw, 6.4vh), 3.25rem)', letterSpacing: '0.28em', marginRight: '-0.28em' }}
             >
               {String(item.val).padStart(2, '0')}
             </span>
@@ -3972,8 +4060,8 @@ async function drawCertificate(name: string, id: string, eventTitle: string) {
   await Promise.all([
     "900 120px 'Archivo'", "400 40px 'Inter'", "700 40px 'Inter'", "600 30px 'IBM Plex Mono'"
   ].map((f) => document.fonts?.load(f).catch(() => undefined)));
-  const [logo, kpr, acmw, nexora] = await Promise.all(
-    ['assets/logo-hd.webp', 'assets/kpr-hd.png', 'assets/acmw.png', 'assets/nexora.png'].map((f) => loadImage(BASE + f))
+  const [logo, kpr, acmw] = await Promise.all(
+    ['assets/logo-hd.webp', 'assets/kpr-hd.png', 'assets/acmw.png'].map((f) => loadImage(BASE + f))
   );
   const stretch = (v: 'expanded' | 'normal') => { g.fontStretch = v; };
   const spaced = (px: number) => { g.letterSpacing = `${px}px`; };
@@ -4104,11 +4192,7 @@ async function drawCertificate(name: string, id: string, eventTitle: string) {
   g.fillText('PRESENTED BY', W / 2, 1185);
   const sh = 64;
   const aw = acmw ? (acmw.naturalWidth / acmw.naturalHeight) * sh : 0;
-  const nw = nexora ? (nexora.naturalWidth / nexora.naturalHeight) * sh : 0;
-  const gap = acmw && nexora ? 40 : 0;
-  let lx = W / 2 - (aw + gap + nw) / 2;
-  if (acmw) { g.drawImage(acmw, lx, 1210, aw, sh); lx += aw + gap; }
-  if (nexora) g.drawImage(nexora, lx, 1210, nw, sh);
+  if (acmw) g.drawImage(acmw, W / 2 - aw / 2, 1210, aw, sh);
   spaced(0);
   return cv;
 }
@@ -5240,6 +5324,48 @@ export default function App() {
       window.removeEventListener('touchmove', block);
     };
   }, [homePhase]);
+  // On the hero page a deliberate scroll down opens the site too (most visitors try to scroll before
+  // they spot a button): wheel / touchpad past a small threshold, a swipe up, or ↓ / PageDown / Space.
+  // On a phone whose hero is taller than the screen, it waits until the hero has been scrolled through.
+  const exploreRef = useRef(explore);
+  exploreRef.current = explore;
+  const modalOpenRef = useRef(false);
+  modalOpenRef.current = isRegisterOpen || !!selectedEvent || mobileMenuOpen;
+  useEffect(() => {
+    if (homePhase !== 'hero' || activeHero || subPage || gate !== 'gone') return;
+    const atBottom = () => window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 4;
+    const go = () => { if (!modalOpenRef.current) exploreRef.current(); };
+    let acc = 0, accTimer = 0;
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY <= 0 || !atBottom()) { acc = 0; return; }
+      acc += e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+      clearTimeout(accTimer);
+      accTimer = window.setTimeout(() => { acc = 0; }, 350);
+      if (acc > 60) { acc = 0; go(); }
+    };
+    let startY: number | null = null;
+    const onTouchStart = (e: TouchEvent) => { startY = e.touches[0]?.clientY ?? null; };
+    const onTouchMove = (e: TouchEvent) => {
+      if (startY === null || !atBottom()) return;
+      if (startY - (e.touches[0]?.clientY ?? startY) > 60) { startY = null; go(); }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement)?.closest?.('input, textarea, select, button, a, [contenteditable]') && e.key === ' ') return;
+      if (['ArrowDown', 'PageDown', ' ', 'End'].includes(e.key) && atBottom()) { e.preventDefault(); go(); }
+    };
+    window.addEventListener('wheel', onWheel, { passive: true });
+    window.addEventListener('touchstart', onTouchStart, { passive: true });
+    window.addEventListener('touchmove', onTouchMove, { passive: true });
+    window.addEventListener('keydown', onKey);
+    return () => {
+      clearTimeout(accTimer);
+      window.removeEventListener('wheel', onWheel);
+      window.removeEventListener('touchstart', onTouchStart);
+      window.removeEventListener('touchmove', onTouchMove);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [homePhase, activeHero, subPage, gate]);
+
   // The explored layout drops the hero, so the techno-fest section moves to the top of the page:
   // jump there before the browser paints, so the view does not move.
   useLayoutEffect(() => {
@@ -5515,7 +5641,7 @@ export default function App() {
       window.removeEventListener('keydown', onKey);
       st.key = null;
     };
-  }, [activeHero, subPage, gate]);
+  }, [activeHero, subPage, gate, homePhase]);   // re-evaluate when the home page switches (hero ⇄ explored)
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-amber-400 selection:text-black relative overflow-x-clip">
@@ -5864,11 +5990,19 @@ export default function App() {
                   {/* Countdown stays where it was: below a 52px button row that started at 68.2vh */}
                   <div className="sm:absolute sm:inset-x-0 sm:top-[calc(68.2vh-5rem+52px)]">
                     <Countdown />
-                    {/* EXPLORE: the way into the rest of the site (the hero page itself does not scroll) */}
-                    <div className="mt-4 sm:mt-5 flex justify-center pointer-events-auto">
-                      <button onClick={explore} className="explore-btn group inline-flex items-center gap-2.5 rounded-full border border-amber-400/70 bg-slate-950/70 px-7 py-2.5 text-[11px] sm:text-xs font-black tracking-[0.35em] text-amber-300 hover:bg-amber-400 hover:text-black transition-colors">
-                        EXPLORE <ChevronRight className="explore-chev w-4 h-4 rotate-90" />
+                    {/* EXPLORE: the way into the rest of the site. A glowing gold key: a light sweep crosses
+                        it, rings pulse out and chevrons flow downward. A deliberate scroll down does the same
+                        (see the hero effect). */}
+                    <div className="mt-3 sm:mt-4 flex flex-col items-center pointer-events-auto">
+                      <button onClick={explore} aria-label="Explore the fest" className="explore-btn group">
+                        <span className="explore-shine" aria-hidden="true" />
+                        <span className="relative">EXPLORE</span>
+                        <span className="explore-chevs relative" aria-hidden="true">
+                          <ChevronRight className="w-4 h-4 rotate-90" />
+                          <ChevronRight className="w-4 h-4 rotate-90" />
+                        </span>
                       </button>
+                      <span className="explore-hint mt-1.5 text-[9px] sm:text-[10px] font-mono font-bold tracking-[0.35em] text-amber-200/80">OR SCROLL DOWN</span>
                     </div>
                   </div>
                 </div>
@@ -5900,7 +6034,6 @@ export default function App() {
                   <div className="flex items-center justify-center gap-4 opacity-90">
                     <span className="text-[9px] font-mono tracking-[0.35em] text-cyan-200/80 uppercase">Presented by</span>
                     <img src={BASE + 'assets/acmw.png'} alt="ACM-W" decoding="async" className="h-6 w-auto object-contain" />
-                    <img src={BASE + 'assets/nexora.png'} alt="NEXORA" decoding="async" className="h-7 w-auto object-contain" />
                   </div>
                 </div>
 
@@ -6492,7 +6625,6 @@ export default function App() {
             <div className="flex items-center gap-4 self-start rounded-full border border-slate-700/80 px-5 py-2.5">
               <span className="font-plex text-[10px] font-semibold tracking-[0.3em] text-cyan-200/80">PRESENTED BY</span>
               <img src={BASE + 'assets/acmw.png'} alt="ACM-W" decoding="async" className="h-6 w-auto object-contain" />
-              <img src={BASE + 'assets/nexora.png'} alt="NEXORA" decoding="async" className="h-7 w-auto object-contain" />
             </div>
           </div>
 
@@ -6683,10 +6815,8 @@ export default function App() {
               <div className="absolute inset-x-3 top-0 h-[2px] rounded-full bg-cyan-300/80 shadow-[0_0_12px_rgba(80,200,255,0.9)]" />
               <div className="hud-scan pointer-events-none absolute inset-x-0 top-0 h-6 bg-gradient-to-b from-cyan-300/15 to-transparent" />
               <div className="text-center text-[7px] sm:text-[9px] font-mono tracking-[0.4em] text-cyan-200/80 uppercase">Presented By</div>
-              <div className="mt-1.5 sm:mt-2 flex items-center gap-1.5 sm:gap-4">
+              <div className="mt-1.5 sm:mt-2 flex items-center justify-center">
                 <img src={BASE + 'assets/acmw.png'} alt="ACM-W" decoding="async" className="h-5 sm:h-11 w-auto object-contain" />
-                <div className="w-px self-stretch bg-gradient-to-b from-transparent via-slate-400/50 to-transparent" />
-                <img src={BASE + 'assets/nexora.png'} alt="NEXORA" decoding="async" className="h-6 sm:h-12 w-auto object-contain" />
               </div>
             </div>
             {/* stand posts */}
