@@ -357,7 +357,7 @@ export const HEROES: Hero[] = [
     lore: 'Ruthless, commanding, absolute. Megatron rules the arena where knowledge is the weapon — step up and defend your research, your build and your ideas before the panel.',
     theme: 'rose',
     kind: 'standard',
-    colors: { primary: 0x858c96, secondary: 0x2b2f36, metal: 0xa3a9b1, visor: 0xff2a1f, glow: 0xff3b24 },
+    colors: { primary: 0x565d69, secondary: 0x1a1d23, metal: 0x7b828d, visor: 0xff2a1f, glow: 0xff3b24 },   // dark gunmetal
     vehicle: 'truck',
     features: { twinEyes: true, horns: true, cannon: true, spikes: true },
     layout: { x: -7.6, z: -2.4, scale: 1.3 },
@@ -475,7 +475,7 @@ export const HEROES: Hero[] = [
     lore: 'The steady hand that keeps the team alive. Ratchet holds the lighter side of the fest — the non-technical events where creativity, reflexes and fun take the stage.',
     theme: 'cyan',
     kind: 'standard',
-    colors: { primary: 0xd9dee5, secondary: 0xb4161c, metal: 0x6d747e, visor: 0x3fe0ff, glow: 0x3fe0ff },
+    colors: { primary: 0xf4f7fa, secondary: 0xd8121c, metal: 0x8a929c, visor: 0x3fe0ff, glow: 0x3fe0ff },   // medic white + red
     vehicle: 'ambulance',
     features: { twinEyes: true, medicCross: true, wheels: true, lightBar: true },
     layout: { x: -17.5, z: -10, scale: 1.24, y: 2.0 },   // far left, on a dais
@@ -1172,8 +1172,9 @@ const ThreeHeroBackground = ({
     renderer.setSize(size0.w, size0.h);
     renderer.setPixelRatio(dpr);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    // Brighter overall (the arena read as night-time): the low tier, with fewer lights, gets a little more.
-    renderer.toneMappingExposure = lite ? 0.98 : 0.84;
+    // Brighter than the original night-time look without washing out (the low tier, with fewer lights,
+    // gets a little more).
+    renderer.toneMappingExposure = lite ? 0.86 : 0.74;
     renderer.shadowMap.enabled = !lite;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     // The mirror floor re-renders the scene; without this the shadow map is redrawn
@@ -1256,8 +1257,8 @@ const ThreeHeroBackground = ({
     /* ---------- lighting ---------- */
     // Low tier: the two off-stage spotlights are left out (spot / point lights are the costliest per
     // pixel); a brighter sky light makes up for them.
-    scene.add(new THREE.HemisphereLight(0x8a9fc8, 0x161a24, lite ? 0.95 : 0.6));
-    const key = new THREE.DirectionalLight(0xfff0dc, 1.9);
+    scene.add(new THREE.HemisphereLight(0x8a9fc8, 0x161a24, lite ? 0.8 : 0.5));
+    const key = new THREE.DirectionalLight(0xfff0dc, 1.7);
     key.position.set(8, 18, 12);
     key.castShadow = true;
     key.shadow.mapSize.set(lowPower ? 1024 : 2048, lowPower ? 1024 : 2048);
@@ -1277,7 +1278,7 @@ const ThreeHeroBackground = ({
     rimCool.position.set(10, 5, -14);
     scene.add(rimCool);
     // Front fill lights the leaders' faces and chests toward the camera (directional: cheap, so every tier gets it).
-    const frontFill = new THREE.DirectionalLight(0xc7d4f0, lite ? 0.75 : 0.6);
+    const frontFill = new THREE.DirectionalLight(0xc7d4f0, lite ? 0.6 : 0.48);
     frontFill.position.set(0, 4, 16);
     scene.add(frontFill);
     const gateLight = new THREE.PointLight(DEFAULT_ACCENT, 28, 30, 2);
@@ -5054,7 +5055,7 @@ function TechnoFestSection() {
       const opaqueBottom = prize ? prize.getBoundingClientRect().bottom : r.bottom;
       sceneGate.scroll = r.top + vh * 0.4 <= 0 && opaqueBottom >= vh;
       root.setProperty('--hero-out', '1');
-      root.setProperty('--scene-dim', (1 - leave).toFixed(3));
+      root.setProperty('--scene-dim', (0.55 * (1 - leave)).toFixed(3));   // same level the EXPLORE transition ends on
     };
     const onScroll = () => { if (!raf) raf = requestAnimationFrame(update); };
     update();
@@ -5731,7 +5732,7 @@ export default function App() {
     setTimeout(() => glideTo(document.getElementById('roster')), 80);
   }, [toExplored]);
 
-  // EXPLORE transition (~1.25 s, time-based so it runs at full frame rate): the page glides
+  // EXPLORE transition (0.8 s, time-based so it runs at full frame rate): the page glides
   // from the hero to the techno-fest section while the hero lifts away, the arena dims and the
   // headline assembles. Scrolling input is held until it lands; then the hero page is dropped and the
   // view is kept exactly where it ended.
@@ -5741,8 +5742,10 @@ export default function App() {
     if (!tf) { tfDrive.on = false; setHomePhase('explored'); return; }
     const root = document.documentElement.style;
     const target = tf.getBoundingClientRect().top + window.scrollY - 80;
-    const D = 1250;
-    const ease = (x: number) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+    // 0.8 s: moves at once and settles softly (ease-out), and the headline assembles while the section
+    // slides up (done about three quarters of the way), so there is never a dark, empty moment.
+    const D = 800;
+    const ease = (x: number) => 1 - Math.pow(1 - x, 3);
     const block = (e: Event) => { if (e.cancelable) e.preventDefault(); };
     window.addEventListener('wheel', block, { passive: false });
     window.addEventListener('touchmove', block, { passive: false });
@@ -5752,16 +5755,16 @@ export default function App() {
       const k = Math.min(1, (now - t0) / D);
       const e = ease(k);
       window.scrollTo({ top: target * e, behavior: 'instant' as ScrollBehavior });
-      tf.style.setProperty('--p', e.toFixed(3));
-      root.setProperty('--hero-out', Math.min(1, e * 1.6).toFixed(3));
-      root.setProperty('--scene-dim', e.toFixed(3));
+      tf.style.setProperty('--p', Math.min(1, 0.08 + e * 1.3).toFixed(3));
+      root.setProperty('--hero-out', Math.min(1, e * 1.4).toFixed(3));
+      root.setProperty('--scene-dim', (e * 0.55).toFixed(3));   // the rising section covers the arena; no need to black it out
       if (k < 1) { raf = requestAnimationFrame(step); return; }
       tfDrive.on = false;
       sceneGate.glide = false;
       snapTop.current = true;
       setHomePhase('explored');
     };
-    // The arena dims under the rising section anyway, so the 3D holds its frame for these 1.25 s and all
+    // The arena is covered by the rising section anyway, so the 3D holds its frame for these 0.8 s and all
     // the frame time goes to the page moving.
     sceneGate.glide = true;
     raf = requestAnimationFrame(step);
