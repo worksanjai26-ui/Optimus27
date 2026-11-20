@@ -3066,6 +3066,7 @@ const ThreeHeroBackground = ({
     window.addEventListener('touchmove', tm, { passive: true });
     el.addEventListener('touchend', te);
 
+    let redrawOnce = false;   // set on resize: draw one frame even while the scene idles
     const onResize = () => {
       if (!mount) return;
       const s = getSize();
@@ -3073,6 +3074,7 @@ const ThreeHeroBackground = ({
       camera.aspect = s.w / s.h;
       camera.updateProjectionMatrix();
       renderer.setSize(s.w, s.h);
+      redrawOnce = true;   // resizing clears the canvas: draw a fresh frame even if the scene is idling
       composer?.setSize(s.w, s.h);
       bloom?.setSize(s.w, s.h);
       if (reflector) reflector.getRenderTarget().setSize(Math.floor(s.w * reflectScale), Math.floor(s.h * reflectScale));
@@ -3129,7 +3131,8 @@ const ThreeHeroBackground = ({
       // incomplete-framebuffer errors from the post-processing passes.
       if (!renderer.domElement.width || !renderer.domElement.height) return;
       // Behind the opaque entry screen: render a short warm-up, then idle.
-      if ((pausedRef.current || sceneGate.scroll || sceneGate.page || sceneGate.glide) && warmFrames > 45) { clock.getDelta(); perfAcc = perfFrames = 0; return; }
+      if ((pausedRef.current || sceneGate.scroll || sceneGate.page || sceneGate.glide) && warmFrames > 45 && !redrawOnce) { clock.getDelta(); perfAcc = perfFrames = 0; return; }
+      redrawOnce = false;
       // Scrolled down into the page content the scene is mostly covered: draw at half rate.
       // Full rate only while a leader is actually on the events stage.
       const onStage = !!stage?.current.key && !!records[stage.current.key];
@@ -5856,6 +5859,7 @@ export default function App() {
     if (homePhase !== 'hero') return;
     tfDrive.on = false;
     sceneGate.glide = false;
+    sceneGate.scroll = false;   // the explored page idles the 3D while it covers the screen; the hero needs it
     const root = document.documentElement.style;
     root.setProperty('--hero-out', '0');
     root.setProperty('--scene-dim', '0');
