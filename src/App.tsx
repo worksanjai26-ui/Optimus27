@@ -535,11 +535,13 @@ const glideTo = (el: HTMLElement | null, offset?: number, holdScene = true) => {
   const ease = (x: number) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
   const stop = () => {
     sceneGate.glide = false;
+    sceneGate.gliding = false;
     cancelAnimationFrame(glideRaf);
     ['wheel', 'touchstart', 'keydown'].forEach((t) => window.removeEventListener(t, stop));
   };
   ['wheel', 'touchstart', 'keydown'].forEach((t) => window.addEventListener(t, stop, { passive: true }));
   sceneGate.glide = holdScene;
+  sceneGate.gliding = true;
   const t0 = performance.now();
   const step = (now: number) => {
     const k = Math.min(1, (now - t0) / dur);
@@ -1078,7 +1080,7 @@ if (typeof document !== 'undefined') document.documentElement.classList.add(`tie
 // Set while opaque page content hides the whole 3D scene (the techno-fest + prize sections filling
 // the screen, or the certificate page's backdrop). The render loop idles then, which frees the
 // GPU / CPU for scrolling on phones and integrated-graphics laptops.
-export const sceneGate = { scroll: false, page: false, glide: false };
+export const sceneGate = { scroll: false, page: false, glide: false, gliding: false };   // gliding: any header jump in progress
 // While the first-time EXPLORE transition runs it drives the techno-fest vars itself (time-based),
 // so the section's own scroll handler stands aside.
 const tfDrive = { on: false };
@@ -1094,6 +1096,7 @@ export type StageState = {
   leaveKey: string;    // leader that just lost the stage: it keeps walking until it is off screen
   leaveU: number;      // the off-screen edge it walks to
   settled: boolean;    // set by the 3D scene: the leader on stage has finished its intro and reached its mark
+  snapHide: boolean;   // hide off-stage robots at once (after a header jump) instead of fading / walking them off
 };
 
 const ThreeHeroBackground = ({
@@ -3087,6 +3090,7 @@ const ThreeHeroBackground = ({
     let raf = 0;
     let warmFrames = 0;        // frames rendered so far (shaders compile during these)
     let skipOdd = false;
+    let snapFrames = 0;
     const frameCap = lite;
     let lastDrawAt = 0;
     let perfAcc = 0, perfFrames = 0, headroomWindows = 0, slowWindows = 0;
@@ -3145,6 +3149,14 @@ const ThreeHeroBackground = ({
       warmFrames++;
       // Report ready only after a warm-up: shaders are compiled and the render scale has settled
       // during these frames, so none of that work is left for the entry screen.
+      // Behind the loading screen, compile every shader the leaders can need — including the vehicle and
+      // transformation materials that are hidden until a car drives in — so the first drive-in never stalls.
+      if (warmFrames === 3) {
+        const vehs = Object.values(records).map((r) => [r.veh, r.veh.visible] as const);
+        vehs.forEach(([v]) => { v.visible = true; });
+        try { renderer.compile(scene, camera); } catch { /* compiled lazily instead */ }
+        vehs.forEach(([v, was]) => { v.visible = was; });
+      }
       if (warmFrames === 40) onReadyRef.current?.();
       // Adaptive resolution: step the render scale down quickly when frames run long,
       // and back up only after sustained headroom (each change reallocates targets).
@@ -3266,6 +3278,8 @@ const ThreeHeroBackground = ({
       });
       segs.rotation.z += reduceMotion ? 0 : dt * 0.06;
       beaconMat.opacity = 0.3 + 0.7 * Math.pow(0.5 + 0.5 * Math.sin(time * 2.4), 6);
+      // Once a header jump has landed, the instant hide applies for a couple of frames, then normal fades resume.
+      if (stage?.current.snapHide && !sceneGate.gliding && ++snapFrames > 2) { stage.current.snapHide = false; snapFrames = 0; }
 
       HEROES.forEach((hero) => {
         const rec = records[hero.key];
@@ -3275,6 +3289,10 @@ const ThreeHeroBackground = ({
         const leaving = staging && !staged && st!.leaveKey === hero.key && rec.group.visible
           && Math.abs(rec.group.position.x) < halfW * 1.15;
         const hidden = (!!focus && !focused) || (staging && !staged && !leaving);
+        if (hidden && st?.snapHide && rec.introStart < 0) {
+          rec.materials.forEach((m) => { m.opacity = 0; if (m.userData.solid) m.transparent = true; });
+          rec.group.visible = false;
+        }
 
         // Fade + fully remove the non-inspected heroes so they never overlap the subject.
         const targetOpacity = hidden ? 0 : 1;
@@ -3835,7 +3853,7 @@ const MOTION_CSS = `
 @keyframes certScan { 0% { transform: translateY(-100%); opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { transform: translateY(460%); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .cert-plate, .cert-in, .cert-scan { animation: none; } }
 .cert-corner::after { content: ''; position: absolute; inset: 7px; border: inherit; border-color: rgba(34,211,238,.18); }
-.pass-deck { display: grid; grid-template-columns: 1fr; gap: 1.25rem; }
+.pass-deck { display: grid; grid-template-columns: 1fr; grid-auto-rows: 1fr; gap: 1.25rem; }   /* every pass the same height */
 @media (min-width: 768px) { .pass-deck { grid-template-columns: 1fr 1fr; } }
 .pass-card { --c: #f5c518; position: relative; min-width: 0; cursor: pointer; padding: 1px;
   background: linear-gradient(160deg, var(--c), color-mix(in srgb, var(--c) 18%, transparent) 45%, color-mix(in srgb, var(--c) 45%, transparent));
@@ -3991,6 +4009,9 @@ const MOTION_CSS = `
   background: #fff6c2; box-shadow: 0 0 14px 4px rgba(250,204,21,.85), 0 0 40px 12px rgba(34,211,238,.35); }
 @media (prefers-reduced-motion: reduce) { .hero-band { opacity: 1; transform: none; } }
 
+/* As the explored page: no fade (nothing behind it to blend into) and 5rem of extra top space under the header */
+.tf-sec.tf-full { -webkit-mask-image: none; mask-image: none; padding-top: 5rem; }
+
 /* Techno-fest section: no hard edge with the hero — its top dissolves into the 3D arena through a soft
    fade that is long while the section is just rising (the hero melts into dark steel) and tightens as it
    scrolls in. Words slide in from the sides. */
@@ -4084,7 +4105,8 @@ const MOTION_CSS = `
 .tier-low .pv-vault, .tier-low .cert-scan { animation: none; }
 .tier-low .prize-trophy, .tier-mid .prize-trophy { filter: none; }
 .tier-low .blur-2xl, .tier-low .blur-3xl, .tier-mid .blur-2xl, .tier-mid .blur-3xl { display: none; }
-.tier-low .prize-mote, .tier-low .gate-mote { display: none; }
+.tier-low .prize-mote { display: none; }
+/* (the entry screen's floating dots stay on every tier: 26 small transform/opacity layers cost next to nothing) */
 .tier-low .lift-card::after { display: none; }
 
 @media (prefers-reduced-motion: reduce) {
@@ -5029,7 +5051,7 @@ function EnergonShards({ className }: { className?: string }) {
   return <canvas ref={ref} className={className} aria-hidden="true" />;
 }
 
-function TechnoFestSection() {
+function TechnoFestSection({ full = false }: { full?: boolean }) {
   const ref = useRef<HTMLElement>(null);
   useEffect(() => {
     const el = ref.current;
@@ -5039,6 +5061,7 @@ function TechnoFestSection() {
     const update = () => {
       raf = 0;
       if (tfDrive.on) return;   // the EXPLORE transition is animating this section
+      if (!el.offsetParent) { sceneGate.scroll = false; return; }   // hidden behind the hero page
       const r = el.getBoundingClientRect();
       const vh = window.innerHeight;
       // The section is its own page now (reached through EXPLORE), so it is always fully assembled.
@@ -5053,9 +5076,10 @@ function TechnoFestSection() {
       // it is fully opaque: while together they cover the screen, nothing of the 3D scene is visible.
       const prize = document.querySelector<HTMLElement>('.prize-sec');
       const opaqueBottom = prize ? prize.getBoundingClientRect().bottom : r.bottom;
-      sceneGate.scroll = r.top + vh * 0.4 <= 0 && opaqueBottom >= vh;
+      // (as its own page it runs up under the header with no fade, so it covers from its very top)
+      sceneGate.scroll = (el.classList.contains('tf-full') ? r.top <= 1 : r.top + vh * 0.4 <= 0) && opaqueBottom >= vh;
       root.setProperty('--hero-out', '1');
-      root.setProperty('--scene-dim', (0.55 * (1 - leave)).toFixed(3));   // same level the EXPLORE transition ends on
+      root.setProperty('--scene-dim', (1 - leave).toFixed(3));   // same level the EXPLORE transition ends on
     };
     const onScroll = () => { if (!raf) raf = requestAnimationFrame(update); };
     update();
@@ -5093,7 +5117,7 @@ function TechnoFestSection() {
   ];
   let wi = 0;
   return (
-    <section ref={ref} className="tf-sec relative z-10 overflow-hidden" style={{ ['--p' as string]: tfDrive.on ? 0 : 1 }}>
+    <section ref={ref} className={`tf-sec relative z-10 overflow-hidden ${full ? 'tf-full' : ''}`} style={{ ['--p' as string]: tfDrive.on ? 0 : 1 }}>
       {/* Backdrop: dark Cybertron steel, energon shards, hex grid, insignia watermark */}
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_40%,#0f1b33_0%,#060a14_55%,#03050b_100%)]" />
       <div className="tf-hex tf-hex-fade absolute inset-0 opacity-[0.07]" />
@@ -5465,6 +5489,7 @@ export default function App() {
   const homePhaseRef = useRef(homePhase);
   homePhaseRef.current = homePhase;
   const snapTop = useRef(false);        // jump to the top once the explored layout is in
+  const heroSince = useRef(0);          // when the hero page last came up (HOME): scroll momentum right after is ignored
   useEffect(() => {
     const sync = () => setSubPage(subPageFromHash());
     window.addEventListener('hashchange', sync);
@@ -5684,11 +5709,13 @@ export default function App() {
     leaveSubPage();
     setMobileMenuOpen(false);
     setHomePhase('hero');
+    heroSince.current = performance.now();
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
   }, []);
   // EXPLORE (button or scrolling down on the hero): every time, a timed transition (hero lifts away,
   // arena dims, the headline assembles). Only reduced-motion users jump straight there.
   const explore = useCallback(() => {
+    if (homePhaseRef.current !== 'hero') return;   // never while a switch is already running
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (reduce) {
       snapTop.current = true;
@@ -5732,7 +5759,7 @@ export default function App() {
     setTimeout(() => glideTo(document.getElementById('roster')), 80);
   }, [toExplored]);
 
-  // EXPLORE transition (0.8 s, time-based so it runs at full frame rate): the page glides
+  // EXPLORE transition (1 s, time-based so it runs at full frame rate): the page glides
   // from the hero to the techno-fest section while the hero lifts away, the arena dims and the
   // headline assembles. Scrolling input is held until it lands; then the hero page is dropped and the
   // view is kept exactly where it ended.
@@ -5742,9 +5769,9 @@ export default function App() {
     if (!tf) { tfDrive.on = false; setHomePhase('explored'); return; }
     const root = document.documentElement.style;
     const target = tf.getBoundingClientRect().top + window.scrollY - 80;
-    // 0.8 s: moves at once and settles softly (ease-out), and the headline assembles while the section
-    // slides up (done about three quarters of the way), so there is never a dark, empty moment.
-    const D = 800;
+    // 1 s: the section moves at once and settles softly (ease-out); the headline's words fly in from left
+    // and right once the section is mostly in view (about 0.2 s – 0.7 s), then the fact boxes follow.
+    const D = 1000;
     const ease = (x: number) => 1 - Math.pow(1 - x, 3);
     const block = (e: Event) => { if (e.cancelable) e.preventDefault(); };
     window.addEventListener('wheel', block, { passive: false });
@@ -5755,16 +5782,18 @@ export default function App() {
       const k = Math.min(1, (now - t0) / D);
       const e = ease(k);
       window.scrollTo({ top: target * e, behavior: 'instant' as ScrollBehavior });
-      tf.style.setProperty('--p', Math.min(1, 0.08 + e * 1.3).toFixed(3));
+      tf.style.setProperty('--p', Math.min(1, Math.max(0, (k - 0.18) / 0.8)).toFixed(3));
       root.setProperty('--hero-out', Math.min(1, e * 1.4).toFixed(3));
-      root.setProperty('--scene-dim', (e * 0.55).toFixed(3));   // the rising section covers the arena; no need to black it out
+      // Half-dimmed while the section rises (no black moment), then the last 30% settles the arena into the
+      // section's dark steel so the explored page's solid backdrop takes over without a pop.
+      root.setProperty('--scene-dim', (k < 0.7 ? e * 0.55 : 0.55 + ((k - 0.7) / 0.3) * 0.45).toFixed(3));
       if (k < 1) { raf = requestAnimationFrame(step); return; }
       tfDrive.on = false;
       sceneGate.glide = false;
       snapTop.current = true;
       setHomePhase('explored');
     };
-    // The arena is covered by the rising section anyway, so the 3D holds its frame for these 0.8 s and all
+    // The arena is covered by the rising section anyway, so the 3D holds its frame for this second and all
     // the frame time goes to the page moving.
     sceneGate.glide = true;
     raf = requestAnimationFrame(step);
@@ -5786,7 +5815,9 @@ export default function App() {
   useEffect(() => {
     if (homePhase !== 'hero' || activeHero || subPage || gate !== 'gone') return;
     const atBottom = () => window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 4;
-    const go = () => { if (!modalOpenRef.current) exploreRef.current(); };
+    // Ignore the first moment after HOME: a touchpad's leftover momentum from scrolling down the site would
+    // otherwise land on the hero and start EXPLORE straight away.
+    const go = () => { if (!modalOpenRef.current && performance.now() - heroSince.current > 900) exploreRef.current(); };
     let acc = 0, accTimer = 0;
     const onWheel = (e: WheelEvent) => {
       if (e.deltaY <= 0 || !atBottom()) { acc = 0; return; }
@@ -5820,6 +5851,15 @@ export default function App() {
 
   // The explored layout drops the hero, so the techno-fest section moves to the top of the page:
   // jump there before the browser paints, so the view does not move.
+  // Back on the hero page: no fade or dimming may be left over from a switch (even an interrupted one).
+  useLayoutEffect(() => {
+    if (homePhase !== 'hero') return;
+    tfDrive.on = false;
+    sceneGate.glide = false;
+    const root = document.documentElement.style;
+    root.setProperty('--hero-out', '0');
+    root.setProperty('--scene-dim', '0');
+  }, [homePhase]);
   useLayoutEffect(() => {
     if (homePhase === 'explored' && snapTop.current) {
       snapTop.current = false;
@@ -5982,7 +6022,7 @@ export default function App() {
     { key: 'shockwave', card: 'right' },
     { key: 'ratchet', card: 'left' }
   ];
-  const stageRef = useRef<StageState>({ key: null, u: 0, introId: 0, introKey: '', fromU: 0, standU: 0, enterU: 0, leaveKey: '', leaveU: 0, settled: false });
+  const stageRef = useRef<StageState>({ key: null, u: 0, introId: 0, introKey: '', fromU: 0, standU: 0, enterU: 0, leaveKey: '', leaveU: 0, settled: false, snapHide: false });
   const stagedOnce = useRef(new Set<string>());   // leaders that already did their first-time transform
   const EMPTY_STAGE = '__empty__';   // stage key that matches no leader: every robot hidden
   const [deckPass, setDeckPass] = useState<number | null>(null);   // pass raised out of the deck (hover / focus); null = deck at rest
@@ -6057,6 +6097,15 @@ export default function App() {
       };
       // Laptops and desktops only: on phones the cards fill the width, so there is no open stage half.
       if (window.innerWidth < 1024) { st.key = null; prev = null; return; }
+      // A header jump (PASSES, MEET THE LEADERS …) sweeps past the events: keep the stage empty on the way
+      // and drop any robot still showing, so none walks across the destination when the page lands.
+      if (sceneGate.gliding) {
+        st.key = EMPTY_STAGE;
+        st.leaveKey = '';
+        st.snapHide = true;
+        prev = null;
+        return;
+      }
       // Each row is taller than the screen and its card pins (sticky) for the extra height — the "stop".
       // The row crossing the screen's middle line owns the stage:
       //   row top   vh/2 → 0  : robot walks in from the card's side (off screen → stand)
@@ -6239,7 +6288,7 @@ export default function App() {
                   width={240}
                   height={240}
                   decoding="sync"
-                  fetchPriority="high"
+                  {...({ fetchpriority: 'high' } as Record<string, string>)}
                   draggable={false}
                   className="gate-logo relative w-full h-full object-contain"
                 />
@@ -6526,19 +6575,22 @@ export default function App() {
 
             </>)}
 
-            {homePhase !== 'hero' && (<>
-            {/* Second page (EXPLORE): the headline on its own Transformers backdrop */}
-            <div className="relative">
+            {/* Second page (EXPLORE). Built in advance and kept hidden while the hero page is up, so EXPLORE only
+                reveals it (no build-up hitch at the click) and the hero still has nothing to scroll to. */}
+            <div style={homePhase === 'hero' ? { display: 'none' } : undefined}>
+            {/* the headline on its own Transformers backdrop */}
+            {/* As its own page the section runs up under the header (its backdrop, not the 3D arena, shows there) */}
+            <div className={`relative ${homePhase === 'explored' ? '-mt-20' : ''}`}>
               {/* Back up to the main (hero) page */}
               {homePhase === 'explored' && (
                 <button
                   onClick={goHome}
-                  className="absolute top-3 sm:top-4 left-1/2 -translate-x-1/2 z-20 inline-flex items-center gap-2 rounded-full border border-amber-400/60 bg-slate-950/70 px-4 py-1.5 text-[10px] sm:text-[11px] font-mono font-bold tracking-[0.3em] text-amber-300 hover:bg-amber-400 hover:text-black transition-colors"
+                  className="absolute top-[5.75rem] sm:top-[6rem] left-1/2 -translate-x-1/2 z-20 inline-flex items-center gap-2 rounded-full border border-amber-400/60 bg-slate-950/70 px-4 py-1.5 text-[10px] sm:text-[11px] font-mono font-bold tracking-[0.3em] text-amber-300 hover:bg-amber-400 hover:text-black transition-colors"
                 >
                   <ChevronRight className="w-3.5 h-3.5 -rotate-90" /> GO TO TOP
                 </button>
               )}
-              <TechnoFestSection />
+              <TechnoFestSection full={homePhase === 'explored'} />
             </div>
 
             {/* Overall prize-pool cinematic reveal */}
@@ -6707,7 +6759,7 @@ export default function App() {
                 </div>
               </div>
             </section>
-            </>)}
+            </div>
 
           </>
         ) : (
